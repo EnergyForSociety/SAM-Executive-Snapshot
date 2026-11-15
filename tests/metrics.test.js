@@ -80,3 +80,22 @@ test('ข้อมูลจริง: ลูกหนี้สามชุดไ
   assert.equal(r.ivAging.total, M.sum(real.recv, x => x.amount));                              // ยอด IV ค้างรับเท่ากับรายงานที่ดึง
   const pv = M.payables(real).totals; assert.equal(pv.overdue + pv.today + pv.d7 + pv.d30 + pv.later, M.sum(real.pay.filter(x => !x.future), x => x.amount));
 });
+const PL = (o) => Object.assign({ doc: 'PO1', date: '2026-10-05', dept: '0008', grp: 'maint', amt: 1000, name: 'x', acc: '5131000' }, o);
+const WO = (o) => Object.assign({ wo: 'W1', reported: '2026-10-01T08:00', state: 'done', sla_h: 72, min_done: 60, min_assign: 30, site: 'RP1-D', qr: 'Q1', urgent: false, safety: false, machine: 'm', mtype: 't', symptom: '', fix: '', done_at: '2026-10-01T09:00' }, o);
+test('ต้นทุน PO แยกกลุ่มและตัวกรองพื้นที่/วันที่', () => {
+  const s = snap({ areas: [{ code: '0008', name: 'ก', kind: 'site', om_site: 'RP1-D', phase: 'Phase 3' }, { code: '0001', name: 'ข', kind: 'site', om_site: 'RP1-C', phase: 'Phase 1&2' }, { code: '313', name: 'ซ่อม', kind: 'admin' }],
+    po_lines: [PL({ grp: 'chem', amt: 300 }), PL({ amt: 700 }), PL({ dept: '0001', amt: 50 }), PL({ dept: '313', amt: 9 }), PL({ date: '2026-09-30', amt: 1 })] });
+  assert.deepEqual(M.costByGroup(M.poSelect(s, { from: '2026-10-01', to: '2026-10-31' })), { chem: 300, maint: 759 });
+  assert.equal(M.sum(M.poSelect(s, { unit: '0008' }), l => l.amt), 1001); assert.equal(M.sum(M.poSelect(s, { unit: 'P12' }), l => l.amt), 50); assert.equal(M.sum(M.poSelect(s, { unit: 'OTHER' }), l => l.amt), 9);
+});
+test('ใบงาน: SLA ค้าง และไม่นับที่ไม่ระบุ SLA', () => {
+  const rows = [WO({}), WO({ min_done: 72 * 60 + 1 }), WO({ sla_h: null }), WO({ state: 'open', min_done: null, reported: '2026-11-01T08:00' }), WO({ state: 'open', min_done: null, reported: '2026-11-13T08:00' }), WO({ state: 'rejected' })];
+  const st = M.woStats(rows, '2026-11-14');
+  assert.equal(st.slaN, 2); assert.equal(st.slaOk, 1); assert.equal(st.noSla, 1); assert.equal(st.open, 2); assert.equal(st.openOver.length, 1); assert.equal(st.rejected, 1);
+});
+test('จับคู่ใบงาน ↔ PO ต้องพื้นที่เดียวกัน ช่วงวันที่ และคำสำคัญร่วม', () => {
+  const s = snap({ areas: [{ code: '0008', name: 'ก', kind: 'site', om_site: 'RP1-D', phase: 'Phase 3' }], maint: { rows: [] },
+    po_lines: [PL({ name: 'Ball Valve 2 นิ้ว', date: '2026-10-10' }), PL({ name: 'Ball Valve', date: '2027-01-10' }), PL({ name: 'ปั๊ม', date: '2026-10-10' })] });
+  const m = M.woMatches(s, [WO({ symptom: 'วาล์วรั่ว' }), WO({ site: null, symptom: 'วาล์วรั่ว' })]);
+  assert.equal(m.length, 1); assert.equal(m[0].cands.length, 1); assert.deepEqual(m[0].cands[0].hit, ['valve']);
+});

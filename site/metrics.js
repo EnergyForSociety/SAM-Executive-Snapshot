@@ -129,6 +129,62 @@
       total: function (metric, kind, year, month, phase) { var t = 0, n = 0; o.sites.forEach(function (s) { if (phase && s.phase !== phase) return; var v = api.get(metric, kind, year, month, s.code); if (v !== null) { t += v; n++; } }); return n ? t : null; } };
     return api;
   }
+
+  /* ---------- ต้นทุนจาก PO (มูลค่าสั่งซื้อตามวันที่ออก PO ก่อน VAT — ไม่ใช่ค่าใช้จ่ายที่รับรู้) ---------- */
+  function deptUnit(dept, areas) { var a = areas[dept]; if (!a || a.kind !== 'site') return 'OTHER'; return a.phase === 'Phase 1&2' ? 'P12' : a.phase === 'Phase 3' ? dept : 'OTHER'; }
+  function siteDept(site, areas) { for (var k in areas) if (areas[k].om_site === site) return k; return null; }
+  function poSelect(snap, f) {
+    f = f || {}; var ar = areaIndex(snap);
+    return (snap.po_lines || []).filter(function (l) {
+      if (f.from && l.date < f.from) return false; if (f.to && l.date > f.to) return false;
+      if (f.grp && (Array.isArray(f.grp) ? f.grp.indexOf(l.grp) < 0 : l.grp !== f.grp)) return false;
+      if (f.unit && deptUnit(l.dept, ar) !== f.unit) return false; return true; });
+  }
+  function costByGroup(lines) { var o = {}; lines.forEach(function (l) { o[l.grp] = (o[l.grp] || 0) + l.amt; }); return o; }
+  function costMonthly(snap, f, year) {
+    var out = []; for (var m = 1; m <= 12; m++) { var ym = year + '-' + String(m).padStart(2, '0'); if (ym > snap.meta.asof.slice(0, 7)) break;
+      out.push({ ym: ym, g: costByGroup(poSelect(snap, Object.assign({}, f, { from: ym + '-01', to: monthEnd(ym) }))) }); }
+    return out;
+  }
+  /* ---------- ใบงานแจ้งซ่อม ---------- */
+  function woUnit(r, areas) { if (!r.site) return 'UNKNOWN'; var d = siteDept(r.site, areas); return d ? deptUnit(d, areas) : 'UNKNOWN'; }
+  function woSelect(snap, f) {
+    f = f || {}; var ar = areaIndex(snap), mt = snap.maint; if (!mt) return [];
+    return mt.rows.filter(function (r) { var d = r.reported.slice(0, 10);
+      if (f.from && d < f.from) return false; if (f.to && d > f.to) return false; if (f.unit && woUnit(r, ar) !== f.unit) return false; return true; });
+  }
+  function woAgeDays(r, asof) { return daysBetween(r.reported.slice(0, 10), asof); }
+  function woStats(rows, asof) {
+    var done = rows.filter(function (r) { return r.state === 'done'; }), open = rows.filter(function (r) { return r.state === 'open'; });
+    var sla = done.filter(function (r) { return r.sla_h && r.min_done !== null; }), ok = sla.filter(function (r) { return r.min_done <= r.sla_h * 60; });
+    var openOver = open.filter(function (r) { return r.sla_h && woAgeDays(r, asof) * 24 > r.sla_h; });
+    return { total: rows.length, done: done.length, open: open.length, rejected: rows.filter(function (r) { return r.state === 'rejected'; }).length,
+      urgent: rows.filter(function (r) { return r.urgent; }).length, safety: rows.filter(function (r) { return r.safety; }).length,
+      slaN: sla.length, slaOk: ok.length, slaPct: sla.length ? ok.length / sla.length * 100 : null, noSla: done.length - sla.length,
+      medAssignH: median(rows.filter(function (r) { return r.min_assign !== null && r.state !== 'rejected'; }).map(function (r) { return r.min_assign / 60; })),
+      medDoneD: median(done.filter(function (r) { return r.min_done !== null; }).map(function (r) { return r.min_done / 1440; })),
+      openRows: open, openOver: openOver };
+  }
+  function countBy(rows, key) { var m = {}; rows.forEach(function (r) { var k = key(r); if (k == null || k === '') return; m[k] = (m[k] || 0) + 1; }); return Object.keys(m).map(function (k) { return { k: k, n: m[k] }; }).sort(function (a, b) { return b.n - a.n || (a.k < b.k ? -1 : 1); }); }
+  /* จับคู่ใบงาน ↔ บรรทัด PO แบบ "เป็นไปได้": พื้นที่เดียวกัน + PO ออกภายใน -7…+60 วันนับจากวันแจ้ง + มีคำสำคัญอุปกรณ์ร่วมกัน · ต้องยืนยันก่อนใช้ */
+  var KW = [['valve', /วาล์ว|valve/i], ['actuator', /หัวขับ|actuator/i], ['solenoid', /solenoid|โซลินอยด์/i], ['diaphragm', /ไดอะแ?ฟ|diaphragm/i], ['compressor', /ปั[๊้]มลม|compressor|air\s*comp/i],
+    ['pump', /ปั[๊้]ม(?!ลม)|pump/i], ['pipe', /ท่อ|pipe|ข้อต่อ|ข้องอ|tee|socket|ซ็อคเกต/i], ['clamp', /แคล้ม|แคมป์|clamp|sadd?le/i], ['screen', /screen|สกรีน|ไส้กรอง|filter/i], ['membrane', /เมมเบรน|membrane|\bUF\b/i],
+    ['motor', /มอเตอร์|motor|bearing|แบริ่ง|ลูกปืน/i], ['electric', /relay|รีเลย์|breaker|เบรกเกอร์|contactor|inverter|อินเวอร์เตอร์|ไฟฟ้า|สายไฟ|PLC/i], ['sensor', /sensor|เซนเซอร์|flow|มิเตอร์|meter|gauge|เกจ|pressure switch/i],
+    ['light', /โคม|หลอดไฟ|light|lamp/i], ['roof', /หลังคา|อาคาร|โครงสร้าง|รั้ว|เชนลิ้ง/i], ['hose', /สายฉีด|เครื่องฉีดน้ำ|แรงดันสูง/i]];
+  function kwOf(t) { var o = []; KW.forEach(function (k) { if (k[1].test(t || '')) o.push(k[0]); }); return o; }
+  function woMatches(snap, rows) {
+    var ar = areaIndex(snap), lines = poSelect(snap, { grp: ['maint', 'capex', 'facility', 'service'] }), out = [];
+    var lk = lines.map(function (l) { return { l: l, kw: kwOf(l.name), site: (ar[l.dept] || {}).om_site || null }; });
+    rows.forEach(function (r) {
+      if (!r.site || r.state === 'rejected') return; var d = r.reported.slice(0, 10), kw = kwOf([r.machine, r.mtype, r.symptom, r.fix].join(' '));
+      if (!kw.length) return;
+      var c = lk.filter(function (x) { var g = daysBetween(d, x.l.date); return x.site === r.site && g >= -7 && g <= 60; }).map(function (x) {
+        var hit = x.kw.filter(function (k) { return kw.indexOf(k) >= 0; }); return { l: x.l, hit: hit, gap: daysBetween(d, x.l.date) }; }).filter(function (x) { return x.hit.length; })
+        .sort(function (a, b) { return b.hit.length - a.hit.length || Math.abs(a.gap) - Math.abs(b.gap); });
+      if (c.length) out.push({ wo: r, cands: c.slice(0, 3) });
+    });
+    return out;
+  }
   /* ป้องกัน spreadsheet formula injection: ข้อความที่ขึ้นต้นด้วย = + - @ tab CR จะเติม ' นำหน้า (ตัวเลขจริงไม่แตะ) */
   function csvCell(v) { if (v == null) return ''; if (typeof v === 'number') return isFinite(v) ? String(v) : ''; var s = String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
   function pct(a, b) { return a === null || b === null || !b ? null : (a - b) / b * 100; }
@@ -136,5 +192,6 @@
 
   return { CAT: CAT, BUCKETS: BUCKETS, dnum: dnum, addDays: addDays, daysBetween: daysBetween, monthEnd: monthEnd, prevMonth: prevMonth, sum: sum, median: median, areaIndex: areaIndex, unitOf: unitOf, unitLabel: unitLabel, unitOptions: unitOptions,
     selectLines: selectLines, billing: billing, months: months, monthly: monthly, compareMonth: compareMonth, byUnit: byUnit, bucket: bucket, aging: aging, receivables: receivables, payables: payables, commitments: commitments,
-    collection: collection, concentration: concentration, csvCell: csvCell, om: om, pct: pct, ratio: ratio };
+    collection: collection, concentration: concentration, csvCell: csvCell, om: om, pct: pct, ratio: ratio,
+    deptUnit: deptUnit, siteDept: siteDept, poSelect: poSelect, costByGroup: costByGroup, costMonthly: costMonthly, woUnit: woUnit, woSelect: woSelect, woAgeDays: woAgeDays, woStats: woStats, countBy: countBy, kwOf: kwOf, woMatches: woMatches };
 });

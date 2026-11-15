@@ -55,6 +55,19 @@ def classify(pid, name, amt):
     if pid == '5312005' or 'ค่าไฟฟ้า' in n: return 'other'
     return 'unclassified'
 
+COST_GROUPS = {'chem': 'สารเคมี', 'maint': 'ซ่อมบำรุง-เครื่องจักรและอะไหล่', 'capex': 'สินทรัพย์ (เครื่องจักร/อาคาร/อุปกรณ์)', 'service': 'บริการ/ตรวจวิเคราะห์/สอบเทียบ',
+               'facility': 'ซ่อมแซมอาคาร/สำนักงาน/ยานพาหนะ', 'other': 'อื่น ๆ'}
+
+def cost_group(pid, pcat):
+    """กลุ่มต้นทุนของบรรทัด PO จากรหัสบัญชี (product_id) หรือหมวดสินค้า RM/SU — ใช้รหัสตามระบบ ไม่ตีความจากชื่อ"""
+    pid = (pid or '').strip(); pcat = (pcat or '').strip()
+    if pcat == 'RM' or pid.startswith('RM-') or pid == '5101004': return 'chem'
+    if pcat == 'SU' or pid.startswith('SU-') or pid[:4] == '5131' or pid == '5111001': return 'maint'
+    if pid[:4] == '1701': return 'capex'
+    if pid in ('5111000', '5111002', '5141000', '5306002'): return 'service'
+    if pid[:4] == '5308': return 'facility'
+    return 'other'
+
 def is_cancel(status):
     """เอกสารยกเลิกไม่นับในทุกยอด"""
     return (status or '').strip().lower() in ('cancel', 'cancelled', 'canceled', 'ยกเลิก')
@@ -227,6 +240,21 @@ def build():
     pos = sorted(pod.values(), key=lambda x: x['doc'])
     for x in pos: x['commit'] = x['approve'] == 'Approved' and x['status'] in ('New', 'Partial', 'Sent', 'Email', 'Confirmed') and x['backlog'] > 0
     dataset('po', 'ใบสั่งซื้อ PO (รายงาน PO3) ปี 2569', c, len(po3), len(pos), max((x['date'] for x in pos), default=None), note='backlog_ap = มูลค่าที่ยังไม่ตั้งเจ้าหนี้ (ก่อน VAT) ตามรายงาน', page_limit=5000)
+    # บรรทัด PO แยกกลุ่มต้นทุนตามรหัสบัญชี/หมวดสินค้า (มูลค่าสั่งซื้อ ไม่ใช่ค่าใช้จ่ายที่รับรู้)
+    coa = {}
+    for r in get('search_coa')[0]:
+        if r.get('acc_code'): coa[r['acc_code']] = r.get('acc_th') or ''
+    po_lines = []
+    for r in po3:
+        if is_cancel(r['status']): continue
+        pid = (r['product_id'] or '').strip()
+        po_lines.append({'doc': r['document'], 'date': r['issue_date'], 'dept': r['department'], 'vendor': clean(r['organization'] or r['vendor']), 'pid': pid,
+                         'acc': pid if re.fullmatch(r'\d{7}', pid) else ('5101004' if r['product_category'] == 'RM' else ''), 'pcat': r['product_category'] or '',
+                         'name': clean(r['product_name']).split('\n')[0][:120], 'qty': r['quantity'], 'unit': r['unit'], 'amt': st(r['before_vat']), 'backlog': st(r['backlog_ap']),
+                         'status': r['status'], 'ref': r['reference'] or '', 'grp': cost_group(pid, r['product_category'])})
+    total_lines = sum(1 for r in po3 if not is_cancel(r['status']))
+    check('บรรทัด PO ทุกบรรทัด (ไม่รวมยกเลิก) ถูกจัดกลุ่มต้นทุน', len(po_lines) == total_lines and all(l['grp'] for l in po_lines), f'{len(po_lines)} บรรทัด · สารเคมี {sum(1 for l in po_lines if l["grp"] == "chem")} · ซ่อมบำรุง {sum(1 for l in po_lines if l["grp"] == "maint")} · สินทรัพย์ {sum(1 for l in po_lines if l["grp"] == "capex")}')
+    check('ยอด PO รายบรรทัดรวมเท่ากับยอดรายเอกสาร (ไม่รวมยกเลิก)', sum(l['amt'] for l in po_lines) == sum(x['amt'] for x in pos if not is_cancel(x['status'])), 'ตรวจด้วยหน่วยสตางค์')
 
     # ---------- ชุดที่ยังไม่มี/ติดสิทธิ์ ----------
     limits = [
@@ -235,9 +263,17 @@ def build():
         {'topic': 'ยอดเรียกเก็บปี 2568 ใน TRCLOUD', 'detail': 'ปี 2568 มีเฉพาะเอกสารยกยอดลูกหนี้ (ไม่มี BL รายบรรทัด) — การเทียบปีก่อนจึงใช้ข้อมูลรายได้/ปริมาณจากไฟล์ OM'},
         {'topic': 'รายงานซื้อ AP (P5) / ใบสำคัญจ่าย PV / GL / ธนาคาร', 'detail': 'ยังไม่ได้นำเข้าในรุ่นนี้ — เงินจ่ายจริงและยอดเงินสดจึงยังไม่แสดง'},
         {'topic': 'หน่วยปริมาณใน BL', 'detail': 'ช่อง unit ว่างทุกบรรทัด — แสดงปริมาณตามเอกสารโดยไม่ติดหน่วย และเทียบกับปริมาณจากไฟล์ OM แยกต่างหาก'},
-        {'topic': 'สัญญา คุณภาพน้ำ Downtime ค่าปรับ', 'detail': 'ยังไม่มีข้อมูล — รอเอกสารสัญญาและไฟล์ OM (ดูแม่แบบใน templates/)'},
+        {'topic': 'สัญญา คุณภาพน้ำ Downtime ค่าปรับ', 'detail': 'ยังไม่มีข้อมูล — ซ่อนหน้าสัญญาและความเสี่ยงไว้ก่อนจนกว่าจะเข้าถึงข้อมูลได้ (แม่แบบอยู่ใน templates/)'},
+        {'topic': 'ค่าซ่อมบำรุงและสารเคมี', 'detail': 'ใช้มูลค่าใบสั่งซื้อ PO ตามวันที่ออก PO (ก่อน VAT) — เป็นภาระสั่งซื้อ ไม่ใช่ค่าใช้จ่ายที่รับรู้ตามงวดบัญชี เพราะ GL / งบกำไรขาดทุนยังเข้าถึงไม่ได้'},
+        {'topic': 'ใบงานแจ้งซ่อม ↔ PO', 'detail': 'ใบงานไม่มีเลขที่ PR/PO และ PO ไม่มีเลขที่ใบงาน — การจับคู่ในหน้า Maintenance เป็นการจับคู่ที่เป็นไปได้จากพื้นที่ ช่วงวันที่ และคำสำคัญ ต้องยืนยันก่อนใช้'},
     ]
     om = json.load(open(os.path.join(DATA, 'om.json'), encoding='utf-8')) if os.path.exists(os.path.join(DATA, 'om.json')) else None
+    mp = os.path.join(DATA, 'maintenance.json')
+    maint = json.load(open(mp, encoding='utf-8')) if os.path.exists(mp) else None
+    if maint:
+        known = {a['om_site'] for a in areas if a.get('om_site')}
+        bad = sorted({r['site'] for r in maint['rows'] if r['site'] and r['site'] not in known})
+        check('รหัสพื้นที่ในใบงานแจ้งซ่อมตรงกับรหัสพื้นที่ OM ใน area_mapping', not bad, 'ไม่พบรหัสที่ไม่รู้จัก' if not bad else 'ไม่รู้จัก: ' + ', '.join(bad))
     cp = os.path.join(DATA, 'contracts.json')
     contracts = json.load(open(cp, encoding='utf-8')) if os.path.exists(cp) else None
     if problems:
@@ -246,7 +282,7 @@ def build():
                      'fetched_from': to_bkk(fetched[0]).isoformat(timespec='seconds'), 'fetched_to': to_bkk(fetched[-1]).isoformat(timespec='seconds'),
                      'period_from': '2026-01-01', 'period_to': asof, 'source': 'TRCLOUD MCP (บริษัท SAM) — อ่านอย่างเดียว ผ่าน session ของผู้ช่วย', 'built_at': datetime.datetime.now(BKK).isoformat(timespec='seconds'),
                      'datasets': datasets, 'checks': checks, 'limits': limits, 'settings': json.load(open(os.path.join(ROOT, 'config', 'settings.json'), encoding='utf-8')), 'money_unit': 'satang'},
-            'areas': areas, 'bl_lines': lines, 'bl_docs': docs, 'iv': ivs, 'recv': recv, 'pay': pay, 'po': pos, 'om': om, 'contracts': contracts}
+            'areas': areas, 'bl_lines': lines, 'bl_docs': docs, 'iv': ivs, 'recv': recv, 'pay': pay, 'po': pos, 'po_lines': po_lines, 'cost_groups': COST_GROUPS, 'coa': {k: v for k, v in coa.items() if any(l['acc'] == k for l in po_lines)}, 'om': om, 'maint': maint, 'contracts': contracts}
     json.dump(snap, open(os.path.join(DATA, 'snapshot.json'), 'w', encoding='utf-8'), ensure_ascii=False)
     return snap
 

@@ -5,7 +5,7 @@
   const M = window.SAMM, $ = (s, r) => (r || document).querySelector(s);
   let S = null, st = { page: 'exec', ym: null, unit: '' }, DR = [], TB = [];
   const TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-  const PAGES = [['exec', 'Executive Snapshot'], ['billing', 'ยอดเรียกเก็บและพื้นที่'], ['recv', 'ลูกหนี้และการรับชำระ'], ['pay', 'เจ้าหนี้และภาระจัดซื้อ'], ['ops', 'การเดินระบบ (OM)'], ['contract', 'สัญญาและความเสี่ยง'], ['data', 'สถานะข้อมูล']];
+  const PAGES = [['exec', 'Executive Snapshot'], ['billing', 'ยอดเรียกเก็บและพื้นที่'], ['recv', 'ลูกหนี้และการรับชำระ'], ['pay', 'เจ้าหนี้และภาระจัดซื้อ'], ['ops', 'การผลิตและสารเคมี'], ['maint', 'Maintenance Snapshot'], ['data', 'สถานะข้อมูล']];
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const nf = (n, d) => Number(n).toLocaleString('en-US', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
   const B = s => nf(s / 100, 2);                                             // สตางค์ → บาท เต็มจำนวน
@@ -50,7 +50,7 @@
         <div class="tools"><input type="search" placeholder="ค้นหาในตาราง" value="${esc(v.q)}" aria-label="ค้นหา">
         ${(spec.filters || []).map(f => `<select data-f="${f.k}" aria-label="${esc(f.label)}"><option value="">${esc(f.label)}: ทั้งหมด</option>${[...new Set(spec.rows.map(r => String(f.get ? f.get(r) : r[f.k])))].sort().map(o => `<option ${v.filt[f.k] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`).join('')}</div>
         <div class="tools"><span class="note">${nf(a.length)} รายการ</span><button class="btn" data-x="csv">ส่งออก CSV</button></div></div>
-        <div class="tbl-wrap"><table><thead><tr>${spec.cols.map(c => `<th class="sortable ${c.r ? 'r' : ''}" data-s="${c.k}">${esc(c.label)}${v.sort === c.k ? (v.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
+        <div class="tbl-wrap"><table ${spec.minw ? `style="min-width:${spec.minw}px"` : ''}><thead><tr>${spec.cols.map(c => `<th class="sortable ${c.r ? 'r' : ''}" data-s="${c.k}">${esc(c.label)}${v.sort === c.k ? (v.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
         <tbody>${pg.length ? pg.map(r => `<tr>${spec.cols.map(c => `<td class="${c.r ? 'r num' : ''}">${c.fmt ? c.fmt(r) : c.money ? B(r[c.k]) : esc(r[c.k])}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${spec.cols.length}"><div class="empty">ไม่พบรายการตามเงื่อนไข</div></td></tr>`}</tbody>
         ${tot ? `<tfoot><tr>${spec.cols.map((c, i) => `<td class="${c.r ? 'r num' : ''}">${i === 0 ? 'รวม ' + nf(a.length) + ' รายการ' : tot[c.k] != null ? B(tot[c.k]) : ''}</td>`).join('')}</tr></tfoot>` : ''}</table></div>
         <div class="pager no-print"><span>หน้า ${v.page + 1} / ${pages}</span><button class="btn" data-x="prev" ${v.page ? '' : 'disabled'}>ก่อนหน้า</button><button class="btn" data-x="next" ${v.page < pages - 1 ? '' : 'disabled'}>ถัดไป</button></div>`;
@@ -132,6 +132,54 @@
   }
   const bars = (rows, max, cls) => rows.map(r => `<button class="bar-row" ${r.drill ? drill(r.drill) : ''}><span>${esc(r.label)}</span><span class="bar-track"><span class="bar-fill ${r.cls || cls || ''}" style="width:${max ? Math.max(0, r.v) / max * 100 : 0}%"></span></span><b class="num" style="text-align:right;font-weight:600">${r.txt}</b></button>`).join('');
 
+  /* ---------- ต้นทุนจาก PO และใบงานแจ้งซ่อม ---------- */
+  const GC = { chem: 'var(--chem)', maint: 'var(--bar1)', capex: 'var(--bar2)', facility: 'var(--bar3)', service: 'var(--sky)', other: 'var(--na)' };
+  const gName = g => (S.cost_groups || {})[g] || g;
+  const accName = a => a ? a + ' ' + ((S.coa || {})[a] || '') : '(หมวดสินค้า)';
+  const poNote = 'มูลค่า PO ก่อน VAT ตามวันที่ออก PO (ไม่รวม PO ยกเลิก) — เป็นมูลค่าสั่งซื้อ ไม่ใช่ค่าใช้จ่ายที่รับรู้ตามงวดบัญชี';
+  const poLineTable = (title, rows, sub) => ({ title, sub: (sub ? sub + ' · ' : '') + poNote, file: 'SAM_PO_lines', sort: 'date', dir: -1, rows, minw: 1300, total: a => ({ amt: M.sum(a, r => r.amt) }),
+    filters: [{ k: 'grp', label: 'กลุ่มต้นทุน', get: r => gName(r.grp) }, { k: 'dept', label: 'พื้นที่', get: r => (areas()[r.dept] || {}).name || r.dept || '(ไม่ระบุ)' }],
+    cols: [{ k: 'date', label: 'วันที่ PO', fmt: r => thDs(r.date) }, { k: 'doc', label: 'เลขที่ PO' }, { k: 'dept', label: 'พื้นที่/หน่วยงาน', fmt: r => esc((areas()[r.dept] || {}).name || r.dept || '(ไม่ระบุ)'), csv: r => (areas()[r.dept] || {}).name || r.dept },
+      { k: 'grp', label: 'กลุ่มต้นทุน', fmt: r => esc(gName(r.grp)), csv: r => gName(r.grp) }, { k: 'acc', label: 'บัญชี/รหัสสินค้า', fmt: r => esc(r.acc ? accName(r.acc) : r.pid), csv: r => r.acc || r.pid },
+      { k: 'name', label: 'รายการ' }, { k: 'vendor', label: 'ผู้ขาย' }, { k: 'qty', label: 'จำนวน', r: 1, fmt: r => nf(+r.qty, +r.qty % 1 ? 2 : 0) + ' ' + esc(r.unit || ''), sortv: r => +r.qty }, { k: 'amt', label: 'มูลค่าก่อน VAT (บาท)', r: 1, money: 1 }, { k: 'status', label: 'สถานะ PO' }] });
+  const woState = r => r.state === 'done' ? 'ปิดงานแล้ว' : r.state === 'rejected' ? 'ถูกปฏิเสธ' : 'ค้าง';
+  const slaTxt = r => !r.sla_h ? NA('ไม่ระบุ SLA') : r.state === 'done' ? (r.min_done <= r.sla_h * 60 ? 'ทัน' : '<span class="tag wait">เกิน SLA</span>') : r.state === 'open' ? (M.woAgeDays(r, S.meta.asof) * 24 > r.sla_h ? '<span class="tag sev">เกิน SLA</span>' : 'ยังอยู่ใน SLA') : '–';
+  const siteName = r => r.site ? ((areas()[M.siteDept(r.site, areas())] || {}).name || r.site) + ' · ' + r.site : '(ระบุพื้นที่ไม่ได้)';
+  const woTable = (title, rows, sub) => ({ title, sub: (sub ? sub + ' · ' : '') + 'ที่มา: ไฟล์ใบงานแจ้งซ่อม ' + (S.maint ? S.maint.source.file : ''), file: 'SAM_work_orders', sort: 'reported', dir: -1, rows, minw: 1500,
+    filters: [{ k: 'state', label: 'สถานะ', get: woState }, { k: 'mtype', label: 'ประเภทเครื่องจักร' }],
+    cols: [{ k: 'wo', label: 'เลขที่ใบงาน' }, { k: 'reported', label: 'วันที่แจ้ง', fmt: r => thDs(r.reported.slice(0, 10)) }, { k: 'site', label: 'พื้นที่', fmt: r => esc(siteName(r)), csv: siteName },
+      { k: 'machine', label: 'เครื่องจักร', fmt: r => esc(r.machine) + (r.qr ? '<br><span class="note">' + esc(r.qr) + '</span>' : ''), csv: r => r.machine + ' [' + r.qr + ']' }, { k: 'mtype', label: 'ประเภท' },
+      { k: 'symptom', label: 'อาการเสีย', fmt: r => esc(r.symptom.length > 110 ? r.symptom.slice(0, 110) + '…' : r.symptom), csv: r => r.symptom }, { k: 'fdesc', label: 'รหัสอาการเสีย', fmt: r => esc(r.fcode ? r.fcode + ' ' + r.fdesc : '–'), csv: r => r.fcode + ' ' + r.fdesc },
+      { k: 'rdesc', label: 'การซ่อม', fmt: r => esc(r.rcode ? r.rcode + ' ' + r.rdesc : '–'), csv: r => r.rcode + ' ' + r.rdesc }, { k: 'urgency', label: 'ความด่วน' },
+      { k: 'state', label: 'สถานะ', fmt: r => esc(r.status), csv: r => r.status }, { k: 'age', label: 'วันนับจากแจ้ง', r: 1, fmt: r => r.state === 'open' ? nf(M.woAgeDays(r, S.meta.asof)) : r.min_done !== null ? nf(r.min_done / 1440, 1) + ' (เสร็จ)' : '–', sortv: r => r.state === 'open' ? M.woAgeDays(r, S.meta.asof) : r.min_done !== null ? r.min_done / 1440 : -1, csv: r => r.state === 'open' ? M.woAgeDays(r, S.meta.asof) : r.min_done !== null ? (r.min_done / 1440).toFixed(2) : '' },
+      { k: 'sla', label: 'SLA', fmt: slaTxt, csv: r => r.sla_h ? r.sla_h + ' ชม.' : '' }] });
+  /* ปริมาณน้ำรับจริงจากไฟล์ OM ตามตัวกรองพื้นที่ (null = ไม่มีข้อมูลหรือพื้นที่ไม่มีปริมาณน้ำ) */
+  function omVol(y, m, unit) {
+    const o = M.om(S); if (!o) return null;
+    if (!unit) return o.total('volume', 'actual', y, m); if (unit === 'P12') return o.total('volume', 'actual', y, m, 'Phase 1&2'); if (unit === 'OTHER') return null;
+    const a = areas()[unit]; return a && a.om_site ? o.get('volume', 'actual', y, m, a.om_site) : null;
+  }
+  /* สารเคมีต่อปริมาณน้ำ: PO สารเคมีสะสม ÷ ปริมาณน้ำรับจริงสะสม ในเดือนที่มีข้อมูล OM ครบทั้งสองฝั่ง */
+  function chemPerM3(unit, toM) {
+    const o = M.om(S); if (!o) return null; const last = Math.min(o.last('volume', 'actual', 2026), toM); if (!last) return null;
+    let c = 0, v = 0; for (let i = 1; i <= last; i++) { const ym = '2026-' + String(i).padStart(2, '0'), vol = omVol(2026, i, unit); if (vol === null) continue; v += vol; c += M.sum(M.poSelect(S, { from: ym + '-01', to: M.monthEnd(ym), grp: 'chem', unit }), l => l.amt); }
+    return v ? { chem: c, vol: v, rate: c / 100 / v, last } : null;
+  }
+  function stackChart(series, keys, onClick, title) {
+    const W = 760, H = 290, L = 46, R = 10, T = 24, Bm = 40, iw = W - L - R, ih = H - T - Bm;
+    const tot = s => M.sum(keys, k => Math.max(0, s.g[k.k] || 0)), mx = Math.max(1, ...series.map(tot)), step = niceStep(mx / 100 / 4), top = step * 4 * 100, bw = iw / Math.max(1, series.length), y = v => T + ih - v / top * ih;
+    let g = '';
+    for (let i = 0; i <= 4; i++) { const v = step * i * 100; g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" style="stroke:var(--grid)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" style="fill:var(--muted)">${nf(v / 1e8, step * 4 < 1e6 ? 2 : 1)}</text>`; }
+    series.forEach((s, i) => {
+      const x = L + i * bw + bw * .18, w = bw * .64, sel = s.ym === st.ym; let base = 0, rects = '';
+      keys.forEach((k, j) => { const v = Math.max(0, s.g[k.k] || 0); if (!v) return; rects += `<rect x="${x}" y="${y(base + v)}" width="${w}" height="${Math.max(0, y(base) - y(base + v))}" class="gy" style="fill:${k.c};animation-delay:${(.2 + i * .04 + j * .02).toFixed(2)}s"><title>${esc(k.label)} ${thM(s.ym)}: ${B(v)} บาท</title></rect>`; base += v; });
+      g += `<g class="hit" ${drill(() => onClick(s))} tabindex="0" role="button" aria-label="${thM(s.ym)} รวม ${MB(base)}"><rect class="bg" x="${L + i * bw}" y="${T}" width="${bw}" height="${ih + 30}" style="fill:${sel ? 'var(--sel)' : 'transparent'}"/>${rects}
+        ${base ? `<text class="fade" x="${x + w / 2}" y="${y(base) - 6}" text-anchor="middle" font-size="11" font-weight="600" style="fill:var(--navy)">${nf(base / 1e8, 2)}</text>` : ''}
+        <text x="${x + w / 2}" y="${H - Bm + 18}" text-anchor="middle" font-size="12" style="fill:${sel ? 'var(--navy)' : 'var(--muted)'}" font-weight="${sel ? 600 : 400}">${TH[+s.ym.slice(5) - 1]}</text></g>`;
+    });
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title || '')}"><text x="${L - 40}" y="13" font-size="11" style="fill:var(--muted)">ล้านบาท</text>${g}</svg><div class="legend">${keys.map(k => `<span><i style="background:${k.c}"></i>${esc(k.label)}</span>`).join('')}</div>`;
+  }
+  const goPage = p => () => { location.hash = '#/' + p; };
   /* ราคาและปริมาณตามเอกสาร BL ล่าสุดของแต่ละหมวด — คำนวณจากข้อมูล ไม่ฝังตัวเลขในโค้ด */
   function facts() {
     const last = cat => S.bl_lines.filter(l => l.cat === cat).sort((a, b) => a.date < b.date ? 1 : -1)[0] || null;
@@ -139,7 +187,40 @@
     const p12 = last('svc_p12'), dd = last('ded_pretreat');
     return { p12, dd, p3price: med('svc_p3'), net12: p12 && dd ? p12.amt + dd.amt : null, codes: [...new Set(S.bl_lines.filter(l => l.cat === 'ded_pretreat').map(l => l.pid))] };
   }
-  const omPhase = (kind, phase) => { const o = M.om(S); if (!o) return null; const lm = o.last('volume', 'actual', 2026) || 12; for (let m = lm; m >= 1; m--) { const v = o.total('volume', kind, 2026, m, phase); if (v !== null) return v; } return null; };
+  /* สารเคมีต่อปริมาณน้ำรายพื้นที่: PO สารเคมีตาม department ÷ ปริมาณน้ำรับจริงตามรหัสพื้นที่ OM (เดือน ม.ค. ถึงเดือนล่าสุดของไฟล์ OM) */
+  function chemSites() {
+    const o = M.om(S); if (!o) return { rows: [], last: 0, total: null }; const last = o.last('volume', 'actual', 2026);
+    const rows = S.areas.filter(a => a.om_site).map(a => { let c = 0, v = 0; for (let i = 1; i <= last; i++) { const ym = '2026-' + String(i).padStart(2, '0'), vol = o.get('volume', 'actual', 2026, i, a.om_site); if (vol === null) continue; v += vol; c += M.sum(M.poSelect(S, { from: ym + '-01', to: M.monthEnd(ym), grp: 'chem' }).filter(l => l.dept === a.code), l => l.amt); }
+      return { code: a.code, name: a.name, site: a.om_site, phase: a.phase, chem: c, vol: v, rate: v && c ? c / 100 / v : null }; }).filter(r => r.rate !== null).sort((a, b) => b.rate - a.rate);
+    return { rows, last, total: chemPerM3('', last) };
+  }
+  const chemSiteTable = cs => ({ title: 'สารเคมีต่อปริมาณน้ำรายพื้นที่ · ม.ค.–' + TH[cs.last - 1] + ' 2569', sub: 'PO สารเคมี (หมวด RM) ก่อน VAT ตาม department ÷ ปริมาณน้ำรับจริงตามไฟล์ OM · PO คือการสั่งซื้อ ไม่ใช่ปริมาณที่ใช้จริง', file: 'SAM_chem_per_m3', sort: 'rate', dir: -1, rows: cs.rows,
+    cols: [{ k: 'name', label: 'พื้นที่' }, { k: 'site', label: 'รหัส OM' }, { k: 'phase', label: 'เฟส' }, { k: 'chem', label: 'PO สารเคมี (บาท)', r: 1, money: 1 }, { k: 'vol', label: 'ปริมาณน้ำรับจริง (ลบ.ม.)', r: 1, fmt: r => nf(r.vol) }, { k: 'rate', label: 'บาท/ลบ.ม.', r: 1, fmt: r => nf(r.rate, 3), csv: r => r.rate.toFixed(4) }] });
+  /* Insight งานซ่อมบำรุงจากใบงาน + PO */
+  function maintInsights() {
+    if (!S.maint) return []; const asof = S.meta.asof, all = M.woSelect(S, {}), y0 = asof.slice(0, 4) + '-01-01', ytd = M.woSelect(S, { from: y0, to: asof }), stt = M.woStats(ytd, asof), out = [];
+    const rep = M.countBy(all.filter(r => r.qr && r.state !== 'rejected'), r => r.qr).filter(x => x.n >= 3), repRows = all.filter(r => rep.some(x => x.k === r.qr));
+    const mt = M.countBy(ytd.filter(r => r.state !== 'rejected'), r => r.mtype), top3 = mt.slice(0, 3), t3n = M.sum(top3, x => x.n), base = ytd.filter(r => r.state !== 'rejected').length;
+    if (top3.length) out.push({ warn: rep.length > 0, title: `งานซ่อม ${nf(t3n / base * 100, 0)}% อยู่ใน ${top3.length} ประเภทเครื่องจักร` + (rep.length ? ` และมี ${nf(rep.length)} เครื่องที่เสียซ้ำ` : ''), find: `ใบงานปี 2569 ${nf(base)} รายการ (ไม่นับที่ถูกปฏิเสธ) เป็น ${top3.map(x => x.k + ' ' + nf(x.n)).join(' · ')} รวม ${nf(t3n / base * 100, 0)}% · เครื่องจักร (QR) ที่แจ้งซ่อม ≥ 3 ครั้งในไฟล์ ${nf(rep.length)} เครื่อง`,
+      nums: `อาการเสียที่พบบ่อย: ${M.countBy(ytd, r => r.fdesc).slice(0, 3).map(x => x.k + ' ' + nf(x.n)).join(' · ')} · วิธีซ่อม: ${M.countBy(ytd, r => r.rdesc).slice(0, 2).map(x => x.k + ' ' + nf(x.n)).join(' · ')}`,
+      impact: 'การเสียซ้ำของเครื่องเดิมหมายถึงค่าอะไหล่และเวลาซ่อมที่เกิดซ้ำ และเสี่ยงต่อการผลิตน้ำไม่ได้ตามแผน', act: 'ทำ Root cause และแผน PM สำหรับเครื่องที่เสียซ้ำ — พิจารณาเปลี่ยนวัสดุ/สเปกวาล์วและข้อต่อที่รั่วซึมบ่อย',
+      caveat: 'ทุกใบงานบันทึกสถานะเครื่องจักร "ยังใช้งานได้" และไลน์ "ผลิตอยู่" จึงยังวัด Downtime จากไฟล์นี้ไม่ได้', ev: ['ดูใบงานของเครื่องที่เสียซ้ำ', () => openTable(woTable('ใบงานของเครื่องจักรที่แจ้งซ่อม ≥ 3 ครั้ง', repRows, 'ทุกช่วงในไฟล์'))] });
+    if (stt.slaN) out.push({ warn: stt.openOver.length > 0, title: (stt.slaPct < 50 ? 'ปิดงานทัน SLA ได้น้อยกว่าครึ่ง' : `ปิดงานทัน SLA ${nf(stt.slaPct, 0)}%`) + (stt.openOver.length ? ' และมีใบงานค้างเกิน SLA ' + nf(stt.openOver.length) + ' รายการ' : ''), find: `ใบงานปี 2569 ที่ปิดแล้วและมี SLA ${nf(stt.slaN)} รายการ ทัน SLA ${nf(stt.slaOk)} รายการ (${nf(stt.slaPct, 0)}%) · ค้างอยู่ ${nf(stt.open)} รายการ เกิน SLA แล้ว ${nf(stt.openOver.length)} รายการ`,
+      nums: `ค่ากลางเวลาแจ้ง→มอบหมาย ${stt.medAssignH !== null ? nf(stt.medAssignH, 1) + ' ชม.' : '–'} · แจ้ง→ซ่อมเสร็จ ${stt.medDoneD !== null ? nf(stt.medDoneD, 1) + ' วัน' : '–'} · ใบงานที่ไม่ระบุ SLA ${nf(stt.noSla)} รายการไม่นับ`,
+      impact: 'งานที่ค้างนานเพิ่มความเสี่ยงต่อคุณภาพน้ำและปริมาณส่งมอบ', act: 'ทบทวนใบงานค้างเกิน SLA รายสัปดาห์ และแยกสาเหตุ (รออะไหล่/รอจัดซื้อ/รอผู้รับเหมา) ในระบบแจ้งซ่อม',
+      caveat: 'เวลา "แจ้ง→ซ่อมเสร็จ" รวมเวลารออะไหล่และจัดซื้อ · SLA อ่านจากข้อความระดับความด่วนในใบงาน', ev: ['ดูใบงานค้าง', () => openTable(woTable('ใบงานที่ยังค้าง', M.woStats(all, asof).openRows, 'ณ ' + thD(asof)))] });
+    const mx = M.woMatches(S, ytd), po = M.poSelect(S, { from: y0, to: asof, grp: ['maint', 'capex'] });
+    out.push({ title: 'ค่าซ่อมจาก PO ยังผูกกับใบงานแจ้งซ่อมไม่ได้', find: `PO ซ่อมบำรุงและสินทรัพย์ปี 2569 ${nf(po.length)} บรรทัด ${MB(M.sum(po, l => l.amt))} ไม่มีเลขที่ใบงาน และใบงานไม่มีเลขที่ PR/PO — จับคู่ที่เป็นไปได้ (พื้นที่ + ช่วงวันที่ + คำสำคัญอุปกรณ์) ได้ ${nf(mx.length)} ใบงาน`,
+      nums: `ใบงานปี 2569 ที่ระบุพื้นที่ได้ ${nf(ytd.filter(r => r.site).length)} จาก ${nf(ytd.length)} รายการ · ใบงานที่ "เปลี่ยนอะไหล่" ${nf(ytd.filter(r => r.rcode === 'RC01').length)} รายการ`,
+      impact: 'ยังตอบไม่ได้ว่าค่าซ่อมแต่ละบาทเกิดจากเครื่องจักรใด ทำให้วัดต้นทุนซ่อมต่อเครื่องและตัดสินใจซ่อม/เปลี่ยนไม่ได้', act: 'เพิ่มช่องเลขที่ PR/PO ในระบบแจ้งซ่อม และให้ผู้ขอซื้อใส่เลขที่ใบงานในหมายเหตุ PR (invoice_note) ทุกครั้ง',
+      caveat: 'ผลการจับคู่ในหน้านี้เป็น "จับคู่ที่เป็นไปได้ (รอยืนยัน)" เท่านั้น ห้ามใช้เป็นต้นทุนจริงของใบงาน', ev: ['ดูคู่ที่เป็นไปได้', () => openTable(matchTable(mx))] });
+    return out;
+  }
+  const matchTable = mx => ({ title: 'ใบงาน ↔ PO: จับคู่ที่เป็นไปได้ (รอยืนยัน)', sub: 'เกณฑ์: พื้นที่เดียวกัน · PO ออกภายใน 7 วันก่อนถึง 60 วันหลังวันแจ้ง · มีคำสำคัญอุปกรณ์ร่วมกัน · แสดงสูงสุด 3 PO ต่อใบงาน — ไม่ใช่การยืนยันต้นทุนจริง', file: 'SAM_wo_po_candidates', sort: 'reported', dir: -1, minw: 1600,
+    rows: [].concat(...mx.map(x => x.cands.map((c, i) => ({ wo: x.wo.wo, reported: x.wo.reported.slice(0, 10), site: x.wo.site, machine: x.wo.machine, symptom: x.wo.symptom, rank: i + 1, po: c.l.doc, po_date: c.l.date, item: c.l.name, grp: c.l.grp, amt: c.l.amt, hit: c.hit.join(', '), gap: c.gap })))),
+    cols: [{ k: 'wo', label: 'เลขที่ใบงาน' }, { k: 'reported', label: 'วันที่แจ้ง', fmt: r => thDs(r.reported) }, { k: 'site', label: 'พื้นที่' }, { k: 'machine', label: 'เครื่องจักร' }, { k: 'symptom', label: 'อาการเสีย', fmt: r => esc(r.symptom.slice(0, 90) + (r.symptom.length > 90 ? '…' : '')), csv: r => r.symptom },
+      { k: 'rank', label: 'ลำดับ', r: 1 }, { k: 'po', label: 'เลขที่ PO' }, { k: 'po_date', label: 'วันที่ PO', fmt: r => thDs(r.po_date) + ' (' + (r.gap >= 0 ? '+' : '') + r.gap + ' วัน)', csv: r => r.po_date }, { k: 'item', label: 'รายการใน PO' }, { k: 'grp', label: 'กลุ่ม', fmt: r => esc(gName(r.grp)), csv: r => gName(r.grp) },
+      { k: 'amt', label: 'มูลค่าก่อน VAT (บาท)', r: 1, money: 1 }, { k: 'hit', label: 'คำสำคัญที่ตรงกัน' }, { k: 'state', label: 'สถานะ', fmt: () => '<span class="tag wait">รอยืนยัน</span>', csv: () => 'รอยืนยัน' }] });
   /* ---------- Insight ตามกฎ (ตรวจสอบย้อนได้ ไม่ใช้โมเดลภายนอก) ---------- */
   function insights() {
     const fx = facts(), out = [], asof = S.meta.asof, y0 = asof.slice(0, 4) + '-01-01', o = M.om(S), ar = areas();
@@ -150,19 +231,19 @@
       const last = mon[mon.length - 1], h1 = mon.slice(0, 6), avg = M.sum(h1, m => m.p3) / h1.length, ch = avg ? (last.p3 - avg) / avg * 100 : null;
       let vol = '';
       if (o) { const lm = o.last('volume', 'actual', 2026), a = o.total('volume', 'actual', 2026, lm, 'Phase 3'), c = o.total('volume', 'contract', 2026, lm, 'Phase 3'); if (a !== null && c) vol = ` ไฟล์ OM ระบุปริมาณน้ำรับจริงเฟส 3 เดือน ${TH[lm - 1]} ${nf(a)} ลบ.ม. เท่ากับ ${nf(a / c * 100, 0)}% ของปริมาณตามสัญญาที่ OM ระบุ (${nf(c)} ลบ.ม./เดือน)`; }
-      if (ch !== null && ch < -15) out.push({ warn: 1, title: 'ยอดเรียกเก็บเฟส 3 ลดลงต่อเนื่องตั้งแต่ไตรมาส 3', find: `BL เฟส 3 ที่ออกใน ${thM(last.ym)} รวม ${MB(last.p3)} ต่ำกว่าค่าเฉลี่ย ม.ค.–มิ.ย. (${MB(avg)}/เดือน) ${nf(Math.abs(ch), 0)}%`,
+      if (ch !== null && ch < -15) out.push({ id: 'p3', warn: 1, title: 'ยอดเรียกเก็บเฟส 3 ลดลงต่อเนื่องตั้งแต่ไตรมาส 3', find: `BL เฟส 3 ที่ออกใน ${thM(last.ym)} รวม ${MB(last.p3)} ต่ำกว่าค่าเฉลี่ย ม.ค.–มิ.ย. (${MB(avg)}/เดือน) ${nf(Math.abs(ch), 0)}%`,
         nums: `ช่วงวันที่ออกเอกสาร ${thM(mon[0].ym)} – ${thM(last.ym)} · เฟส 3 คิดตามปริมาณรายสัปดาห์${fx.p3price ? ' (ราคากลาง ' + nf(fx.p3price, 2) + ' บาท/หน่วยตามเอกสาร)' : ''}` + vol, impact: 'รายรับส่วนที่ผันตามปริมาณลดลง ขณะที่เฟส 1&2 เรียกเก็บรวมคงที่' + (fx.p12 ? ' ' + MB(fx.p12.amt) + '/เดือนก่อนรายการหัก' : ''),
         act: 'ให้ OM ยืนยันสาเหตุรายฟาร์ม (หยุดฟาร์ม/รับน้ำน้อย/เหตุฝั่งระบบ) และตรวจเงื่อนไขปริมาณขั้นต่ำของเฟส 3 ในสัญญา', caveat: 'ยังไม่มีหลักฐานสาเหตุของปริมาณที่ลดลง และยังไม่มีเอกสารสัญญายืนยันว่าเฟส 3 มีข้อผูกพันขั้นต่ำหรือไม่ — ระบบจึงไม่สรุปสาเหตุหรือค่าปรับ',
         ev: ['ดู BL เฟส 3 ทั้งปี', () => openTable(linesTable('BL เฟส 3 ปี ' + (+asof.slice(0, 4) + 543), M.selectLines(S, { from: y0, to: asof, cat: 'svc_p3' }), 'ตามวันที่ออกเอกสาร'))] });
     }
     // 2) การกระจุกตัวของลูกค้า
     const cc = M.concentration(ytd);
-    if (cc.top && cc.top.share > 80) out.push({ title: 'ยอดเรียกเก็บเกือบทั้งหมดมาจากลูกค้ารายเดียว', find: `${nf(cc.top.share, 2)}% ของยอดเรียกเก็บสุทธิก่อน VAT สะสมปีอยู่ในชื่อ ${cc.top.name}`, nums: `${MB(cc.top.amt)} จาก ${MB(cc.total)} · BL วันที่ออก ${thDs(y0)} – ${thDs(asof)}`,
-      impact: 'ผลประกอบการขึ้นกับสัญญาและแผนการเลี้ยงของคู่สัญญารายเดียว', act: 'ติดตามกำหนดสัญญา/การต่ออายุรายพื้นที่ (ยังไม่มีข้อมูลในระบบ — ดูหน้า "สัญญาและความเสี่ยง")', caveat: 'จัดกลุ่มจากชื่อลูกค้าในเอกสาร ยังไม่ได้ผูกกับเลขสัญญา',
+    if (cc.top && cc.top.share > 80) out.push({ id: 'conc', title: 'ยอดเรียกเก็บเกือบทั้งหมดมาจากลูกค้ารายเดียว', find: `${nf(cc.top.share, 2)}% ของยอดเรียกเก็บสุทธิก่อน VAT สะสมปีอยู่ในชื่อ ${cc.top.name}`, nums: `${MB(cc.top.amt)} จาก ${MB(cc.total)} · BL วันที่ออก ${thDs(y0)} – ${thDs(asof)}`,
+      impact: 'ผลประกอบการขึ้นกับสัญญาและแผนการเลี้ยงของคู่สัญญารายเดียว', act: 'ติดตามกำหนดสัญญา/การต่ออายุรายพื้นที่ (ยังไม่มีทะเบียนสัญญาในระบบ)', caveat: 'จัดกลุ่มจากชื่อลูกค้าในเอกสาร ยังไม่ได้ผูกกับเลขสัญญา',
       ev: ['ดูยอดแยกลูกค้า', () => openTable({ title: 'ยอดเรียกเก็บสะสมปีแยกลูกค้า', sub: 'BL ก่อน VAT', file: 'SAM_customers', sort: 'amt', dir: -1, rows: cc.rows, cols: [{ k: 'name', label: 'ลูกค้า' }, { k: 'amt', label: 'ยอดก่อน VAT (บาท)', r: 1, money: 1 }, { k: 'share', label: 'สัดส่วน', r: 1, fmt: r => nf(r.share, 2) + '%', csv: r => r.share.toFixed(4) }] })] });
     // 3) รายการหัก Pre-Treatment
     const ded = yb.byCat.ded_pretreat || 0, p12 = yb.byCat.svc_p12 || 0, pc = yb.byCat.pretreat_charge || 0, codes = [...new Set(ytd.filter(l => l.cat === 'ded_pretreat').map(l => l.pid))];
-    if (ded) out.push({ warn: codes.length > 1, title: 'รายการหัก Pre-Treatment ลดยอดเรียกเก็บเฟส 1&2 ลงเกือบหนึ่งในห้า', find: `หัก Pre-Treatment สะสมปี ${MB(-ded)} = ${nf(-ded / p12 * 100, 1)}% ของค่าบริการเฟส 1&2 ก่อนหัก (${MB(p12)})`,
+    if (ded) out.push({ id: 'pre', warn: codes.length > 1, title: 'รายการหัก Pre-Treatment ลดยอดเรียกเก็บเฟส 1&2 ลงเกือบหนึ่งในห้า', find: `หัก Pre-Treatment สะสมปี ${MB(-ded)} = ${nf(-ded / p12 * 100, 1)}% ของค่าบริการเฟส 1&2 ก่อนหัก (${MB(p12)})`,
       nums: `${fx.dd ? 'BL ล่าสุดหัก ' + MB(-fx.dd.amt) + ' (' + nf(Math.abs(+fx.dd.price), 2) + ' บาท × ' + nf(+fx.dd.qty) + ' หน่วยตามเอกสาร) · ' : ''}มี BL "ค่า Pre Treament" เรียกเก็บแยกรายเดือนอีก ${MB(pc)} · รายการหักบันทึกใต้ ${codes.length} รหัส (${codes.join(', ')})`,
       impact: (fx.net12 !== null ? 'ยอดสุทธิเฟส 1&2 เหลือ ' + MB(fx.net12) + '/เดือนก่อน VAT · ' : '') + 'การใช้รหัสบัญชีต่างกันทำให้รายงานต้นทุน/รายได้ไม่สม่ำเสมอ', act: 'ให้ฝ่ายบัญชียืนยันลักษณะรายการ (ส่วนลดตามสัญญา / ต้นทุนที่ลูกค้ารับภาระ / อื่น) และใช้รหัสเดียว',
       caveat: 'ยังไม่มีหลักฐานว่ารายการนี้เป็นค่าปรับ — ระบบแสดงเป็น "รายการหัก" ตามชื่อในเอกสารเท่านั้น', ev: ['ดูบรรทัด Pre-Treatment', () => openTable(linesTable('บรรทัด Pre-Treatment ทั้งรายการหักและรายการเรียกเก็บ', ytd.filter(l => l.cat === 'ded_pretreat' || l.cat === 'pretreat_charge'), 'สะสมปี'))] });
@@ -170,61 +251,68 @@
     const rv = M.receivables(S);
     if (rv.iv.length || rv.open.length) {
       const od = rv.ivAging.buckets[5];
-      out.push({ warn: 1, title: 'IV ค้างรับช่วงต้นปียังไม่ถูกตัดชำระในระบบ', find: `IV ${nf(rv.iv.length)} ฉบับ รวม ${MB(rv.ivAging.total)} (ออก ม.ค.–ก.พ. 2569) ยังสถานะค้างรับ โดย ${nf(od.count)} ฉบับเกินกำหนดมากกว่า 90 วัน ขณะที่ IV ตั้งแต่ มี.ค. เป็นสถานะรับเงินแล้วทั้งหมด`,
+      out.push({ id: 'ar', warn: 1, title: 'IV ค้างรับช่วงต้นปียังไม่ถูกตัดชำระในระบบ', find: `IV ${nf(rv.iv.length)} ฉบับ รวม ${MB(rv.ivAging.total)} (ออก ม.ค.–ก.พ. 2569) ยังสถานะค้างรับ โดย ${nf(od.count)} ฉบับเกินกำหนดมากกว่า 90 วัน ขณะที่ IV ตั้งแต่ มี.ค. เป็นสถานะรับเงินแล้วทั้งหมด`,
         nums: `แยกจาก BL ปี 2569 ที่ยังไม่รับชำระ ${nf(rv.open.length)} ฉบับ ${MB(rv.openAging.total)} (เกินกำหนด ${MB(rv.openAging.overdue)}) และยอดยกมาปี 2568 ที่ยังเปิด ${nf(rv.openOld.length)} ฉบับ ${MB(rv.openOldTotal)} · ณ ${thDs(asof)}`,
         impact: 'ถ้าเป็นหนี้ค้างจริงคือเงินสดที่ยังไม่ได้รับ ถ้ารับแล้วแต่ไม่ได้ตัดชำระ ยอดลูกหนี้ในระบบสูงเกินจริง', act: 'ให้ฝ่ายบัญชีกระทบยอด IV กลุ่มนี้กับเงินรับในบัญชีธนาคาร และปิดรายการยกยอดปี 2568',
         caveat: 'ชุด IV ค้างรับกับชุด BL ที่ยังไม่รับชำระตรวจแล้วไม่ซ้ำเอกสารกัน แต่ยังไม่รวมเป็นยอดลูกหนี้เดียวจนกว่าจะกระทบยอดเสร็จ', ev: ['ดู IV ค้างรับ', () => openTable(recvTable('IV ค้างรับที่รอตรวจสอบการตัดชำระ', rv.iv, 'จาก get_receivable_due · ยอดหลังหัก WHT'))] });
     }
     // 5) เจ้าหนี้ใกล้ครบกำหนด
     const pv = M.payables(S), soon = pv.groups.today.concat(pv.groups.d7, pv.groups.d30), big = soon.slice().sort((a, b) => b.amount - a.amount)[0];
-    if (soon.length) out.push({ title: 'เจ้าหนี้ที่ครบกำหนดภายใน 30 วัน', find: `${nf(soon.length)} รายการ รวม ${MB(pv.totals.today + pv.totals.d7 + pv.totals.d30)}` + (big ? ` รายการใหญ่สุด ${big.vendor} ${MB(big.amount)} ครบกำหนด ${thDs(big.due)}` : ''),
+    if (soon.length) out.push({ id: 'pay', title: 'เจ้าหนี้ที่ครบกำหนดภายใน 30 วัน', find: `${nf(soon.length)} รายการ รวม ${MB(pv.totals.today + pv.totals.d7 + pv.totals.d30)}` + (big ? ` รายการใหญ่สุด ${big.vendor} ${MB(big.amount)} ครบกำหนด ${thDs(big.due)}` : ''),
       nums: `ครบกำหนดแล้ว ${nf(pv.groups.overdue.length)} รายการ ${MB(pv.totals.overdue)} · ณ ${thDs(asof)} · ยอดคงค้างหลังหัก WHT`, impact: 'ต้องเตรียมเงินจ่ายภายในสิ้นเดือน', act: 'ฝ่ายการเงินยืนยันแผนจ่ายและเอกสารประกอบของรายการใหญ่',
       caveat: pv.future.length ? `มีเอกสารลงวันที่อนาคต ${nf(pv.future.length)} รายการ (${MB(pv.totals.future)}) แยกไว้ไม่รวมในยอดนี้` : '', ev: ['ดูรายการ', () => openTable(payTable('เจ้าหนี้ครบกำหนดภายใน 30 วัน', soon, 'ณ ' + thD(asof)))] });
-    return out.slice(0, 5);
+    // 6) สารเคมีต่อปริมาณน้ำรายพื้นที่ (PO ÷ OM)
+    const cs = chemSites();
+    if (cs.rows.length >= 3) {
+      const hi = cs.rows[0], lo = cs.rows[cs.rows.length - 1], med = M.median(cs.rows.map(r => r.rate));
+      out.push({ id: 'chem', title: 'ต้นทุนสารเคมีต่อปริมาณน้ำต่างกันมากระหว่างพื้นที่', find: `PO สารเคมีสะสม ม.ค.–${TH[cs.last - 1]} ÷ ปริมาณน้ำรับจริงตามไฟล์ OM: ${hi.name} ${nf(hi.rate, 3)} บาท/ลบ.ม. สูงสุด เทียบ ${lo.name} ${nf(lo.rate, 3)} และค่ากลาง ${nf(med, 3)} บาท/ลบ.ม.`,
+        nums: `ทั้งบริษัท ${cs.total ? nf(cs.total.rate, 3) + ' บาท/ลบ.ม. (PO สารเคมี ' + MB(cs.total.chem) + ' ÷ ' + nf(cs.total.vol) + ' ลบ.ม.)' : NA()} · ${nf(cs.rows.length)} พื้นที่ที่มีทั้ง PO และปริมาณน้ำ`,
+        impact: 'สารเคมีเป็นต้นทุนผันแปรหลักของการผลิตน้ำ — พื้นที่ที่ใช้สูงกว่าค่ากลางมากอาจมีปัญหาคุณภาพน้ำดิบ การตั้งค่าเครื่องจ่าย หรือการสต็อก', act: 'ให้ OM ตรวจอัตราการจ่ายสารเคมีจริงและสต็อกคงเหลือของพื้นที่ที่สูงสุด 3 อันดับ เทียบกับค่ามาตรฐานการเดินระบบ',
+        caveat: 'ใช้มูลค่า PO ตามวันที่สั่งซื้อ ไม่ใช่ปริมาณที่ใช้จริง — การซื้อเข้าสต็อกล่วงหน้าทำให้ค่ารายพื้นที่คลาดได้ · ยังไม่มีข้อมูลการเบิกใช้/สต็อก', ev: ['ดูสารเคมีรายพื้นที่', () => openTable(chemSiteTable(cs))] });
+    }
+    // 7) งานซ่อมบำรุง
+    const mi = maintInsights(); if (mi.length) out.push(Object.assign({ id: 'maint' }, mi[0]));
+    return out;
   }
   const insightHtml = i => `<article class="insight ${i.warn ? 'warn' : ''}"><h3>${esc(i.title)}</h3><dl><dt>ข้อค้นพบ</dt><dd>${esc(i.find)}</dd><dt>ตัวเลขและช่วงเวลา</dt><dd>${esc(i.nums)}</dd><dt>ผลต่อการบริหาร</dt><dd>${esc(i.impact)}</dd><dt>สิ่งที่ควรดำเนินการ</dt><dd>${esc(i.act)}</dd><dt>ผู้รับผิดชอบ/กำหนด</dt><dd>${NA('ยังไม่มีข้อมูลผู้รับผิดชอบและกำหนดเวลา')}</dd>${i.caveat ? `<dt>ข้อจำกัด</dt><dd>${esc(i.caveat)}</dd>` : ''}<dt>หลักฐาน</dt><dd><button class="link" ${drill(i.ev[1])}>${esc(i.ev[0])}</button></dd></dl></article>`;
 
   /* ---------- หน้า 1: Executive Snapshot ---------- */
   function pExec() {
-    const asof = S.meta.asof, y0 = asof.slice(0, 4) + '-01-01', cm = M.compareMonth(S, st.ym, F()), to = selTo();
+    const asof = S.meta.asof, y0 = asof.slice(0, 4) + '-01-01', cm = M.compareMonth(S, st.ym, F()), to = selTo(), mo = +st.ym.slice(5, 7);
     const ytdL = M.selectLines(S, F({ from: y0, to })), ytd = M.billing(ytdL), monL = M.selectLines(S, F({ from: cm.from, to: cm.to }));
     const rv = M.receivables(S, { unit: st.unit }), pv = M.payables(S), cmt = M.commitments(S), o = M.om(S), ser = M.monthly(S, F());
-    const k1 = MBv(cm.cur.net), k2 = MBv(ytd.net), k3 = MBv(rv.openAging.total), k4 = MBv(pv.totals.overdue);
-    const cmpLabel = cm.prev ? `เทียบ ${thDs(cm.pfrom)}–${thDs(cm.pto)}` : 'ไม่มีเดือนก่อนในชุดข้อมูล';
+    const k1 = MBv(cm.cur.net), cmpLabel = cm.prev ? `เทียบ ${thDs(cm.pfrom)}–${thDs(cm.pto)}` : 'ไม่มีเดือนก่อนในชุดข้อมูล';
     const units = M.byUnit(S, F({ from: cm.from, to: cm.to })), umax = Math.max(1, ...units.map(u => u.net));
-    const lm = o ? Math.min(o.last('volume', 'actual', 2026), +st.ym.slice(5, 7)) : 0;
-    const va = o && lm ? o.total('volume', 'actual', 2026, lm) : null, vp = o && lm ? o.total('volume', 'actual', 2025, lm) : null, a3 = o && lm ? o.total('volume', 'actual', 2026, lm, 'Phase 3') : null, c3 = o && lm ? o.total('volume', 'contract', 2026, lm, 'Phase 3') : null;
-    const cc = M.concentration(ytdL), ins = insights();
+    // การผลิต (ไฟล์ OM) — ใช้เดือนที่เลือก หรือเดือนล่าสุดที่มีข้อมูล
+    const lm = o ? Math.min(o.last('volume', 'actual', 2026), mo) : 0, va = lm ? omVol(2026, lm, st.unit) : null, vp = lm ? omVol(2025, lm, st.unit) : null;
+    let vy = null; if (lm) { vy = 0; for (let i = 1; i <= lm; i++) { const v = omVol(2026, i, st.unit); if (v !== null) vy += v; } }
+    // ต้นทุนจาก PO ตามตัวกรองพื้นที่
+    const pm = M.poSelect(S, { from: cm.from, to: cm.to, unit: st.unit }), py = M.poSelect(S, { from: y0, to, unit: st.unit });
+    const gm = M.costByGroup(pm), gy = M.costByGroup(py), cpm = chemPerM3(st.unit, mo);
+    const mwo = M.woSelect(S, { from: cm.from, to: cm.to, unit: st.unit }), wst = M.woStats(M.woSelect(S, { unit: st.unit }), asof);
+    const k3 = MBv(gm.chem || 0), k4 = MBv(gm.maint || 0);
+    const cser = M.costMonthly(S, { unit: st.unit }, +asof.slice(0, 4)), ckeys = [{ k: 'chem', label: 'สารเคมี', c: GC.chem }, { k: 'maint', label: 'ซ่อมบำรุง-เครื่องจักรและอะไหล่', c: GC.maint }, { k: 'capex', label: 'สินทรัพย์ (เครื่องจักร/อาคาร/อุปกรณ์)', c: GC.capex }];
+    const all = insights(), ins = ['p3', 'chem', 'maint', 'pre', 'ar'].map(id => all.filter(i => i.id === id)[0]).filter(Boolean);
     const follow = [
       { t: 'IV ค้างรับรอตรวจสอบการตัดชำระ', d: `${nf(rv.iv.length)} ฉบับ · เกิน 90 วัน ${nf(rv.ivAging.buckets[5].count)} ฉบับ`, v: rv.ivAging.total, f: () => openTable(recvTable('IV ค้างรับที่รอตรวจสอบการตัดชำระ', rv.iv, 'ยอดหลังหัก WHT')) },
       { t: 'BL ปี 2569 ที่ยังไม่รับชำระ', d: `${nf(rv.open.length)} ฉบับ · เกินกำหนด ${MB(rv.openAging.overdue)}`, v: rv.openAging.total, f: () => openTable(blDocTable('BL ปี 2569 ที่ยังไม่รับชำระ', rv.open, 'ยอดรวม VAT · ไม่รวมส่วนต่างภาษีหัก ณ ที่จ่าย')) },
-      { t: 'เจ้าหนี้ครบกำหนดภายใน 30 วัน', d: `${nf(pv.groups.today.length + pv.groups.d7.length + pv.groups.d30.length)} รายการ`, v: pv.totals.today + pv.totals.d7 + pv.totals.d30, f: () => openTable(payTable('เจ้าหนี้ครบกำหนดภายใน 30 วัน', pv.groups.today.concat(pv.groups.d7, pv.groups.d30), 'ณ ' + thD(asof))) },
-      { t: 'ยอดยกมาปี 2568 ที่ยังเปิดอยู่', d: `${nf(rv.openOld.length)} ฉบับ · เอกสารยกยอดลูกหนี้`, v: rv.openOldTotal, f: () => openTable(blDocTable('ยอดยกมาปี 2568 ที่ยังไม่ตัดชำระ', rv.openOld, 'เอกสารประเภท ยกยอด-ลูกหนี้1')) },
-      { t: 'ภาระ PO ที่อนุมัติแล้วยังไม่ตั้งเจ้าหนี้', d: `${nf(cmt.rows.length)} ใบ · ก่อน VAT`, v: cmt.total, f: () => openTable(poTable('ภาระ PO ที่ยังไม่ตั้งเจ้าหนี้', cmt.rows)) },
-      { t: 'เจ้าหนี้ครบกำหนดแล้ว', d: `${nf(pv.groups.overdue.length)} รายการ`, v: pv.totals.overdue, f: () => openTable(payTable('เจ้าหนี้ครบกำหนดแล้ว', pv.groups.overdue, 'ณ ' + thD(asof))) }
+      { t: 'เจ้าหนี้ครบกำหนดภายใน 30 วัน', d: `${nf(pv.groups.today.length + pv.groups.d7.length + pv.groups.d30.length)} รายการ · ครบกำหนดแล้วอีก ${MB(pv.totals.overdue)}`, v: pv.totals.today + pv.totals.d7 + pv.totals.d30, f: () => openTable(payTable('เจ้าหนี้ครบกำหนดภายใน 30 วัน', pv.groups.today.concat(pv.groups.d7, pv.groups.d30), 'ณ ' + thD(asof))) },
+      { t: 'ภาระ PO ที่อนุมัติแล้วยังไม่ตั้งเจ้าหนี้', d: `${nf(cmt.rows.length)} ใบ · ก่อน VAT`, v: cmt.total, f: () => openTable(poTable('ภาระ PO ที่ยังไม่ตั้งเจ้าหนี้', cmt.rows)) }
     ].filter(x => x.v > 0).sort((a, b) => b.v - a.v);
     return `<div class="grid g4">
-      <button class="card accent navy kpi" ${drill(() => openTable(linesTable('ยอดเรียกเก็บ ' + thM(st.ym), monL, `วันที่ออก ${thDs(cm.from)} – ${thDs(cm.to)}`)))}><span class="lab">ยอดเรียกเก็บสุทธิก่อน VAT · ${thM(st.ym)}</span><span class="val num">${k1[0]} <small>${k1[1]}</small></span><span class="full num">${B(cm.cur.net)} บาท${partialNote(st.ym)}</span>${delta(cm.pct, cmpLabel)}<span class="more">ดู BL ${nf(cm.cur.docs)} ฉบับ →</span></button>
-      <button class="card accent kpi" ${drill(() => openTable(linesTable('ยอดเรียกเก็บสะสมปี', ytdL, `วันที่ออก ${thDs(y0)} – ${thDs(to)}`)))}><span class="lab">ยอดเรียกเก็บสะสมปี · ม.ค.–${TH[+st.ym.slice(5) - 1]} ${+asof.slice(0, 4) + 543}</span><span class="val num">${k2[0]} <small>${k2[1]}</small></span><span class="full num">${B(ytd.net)} บาท · ก่อนหัก ${MB(ytd.gross)} · หัก ${MB(-ytd.deduction)}</span><span class="delta na">เทียบปีก่อน: N/A (TRCLOUD ไม่มี BL ปี 2568)</span><span class="more">ดู BL ${nf(ytd.docs)} ฉบับ →</span></button>
-      <button class="card accent warn kpi" ${drill(() => openTable(blDocTable('BL ปี 2569 ที่ยังไม่รับชำระ', rv.open, 'ยอดรวม VAT ณ ' + thD(asof) + ' · ไม่รวมส่วนต่างภาษีหัก ณ ที่จ่าย 3%')))}><span class="lab">BL ที่ยังชำระไม่ครบ · ณ ${thDs(asof)}</span><span class="val num">${nf(rv.open.length)} <small>ฉบับ · ${k3[0]} ${k3[1]}</small></span><span class="full num">${B(rv.openAging.total)} บาท (รวม VAT) · เกินกำหนด ${MB(rv.openAging.overdue)}</span><span class="full">ไม่นับส่วนต่าง WHT 3% ${nf(rv.wht.length)} ฉบับ และแยกจาก IV ค้างรับ</span><span class="more">ดูเอกสาร →</span></button>
-      <button class="card accent sky kpi" ${drill(() => openTable(payTable('เจ้าหนี้ครบกำหนดแล้ว', pv.groups.overdue, 'ณ ' + thD(asof))))}><span class="lab">เจ้าหนี้ครบกำหนดแล้ว · ณ ${thDs(asof)}</span><span class="val num">${k4[0]} <small>${k4[1]}</small></span><span class="full num">${B(pv.totals.overdue)} บาท · ${nf(pv.groups.overdue.length)} รายการ</span><span class="full">ครบใน 30 วันอีก ${MB(pv.totals.today + pv.totals.d7 + pv.totals.d30)}</span><span class="more">ดูเอกสาร →</span></button></div>
-    <div class="pill3">
-      <div class="card accent navy mini"><h3>ธุรกิจและการเงิน</h3>
-        <div class="row"><span>ค่าบริการก่อนรายการหัก (${thM(st.ym)})</span><b class="num">${MB(cm.cur.gross)}</b></div><div class="row"><span>รายการหัก Pre-Treatment</span><b class="num">${cm.cur.deduction ? '−' + MB(-cm.cur.deduction) : '0 บาท'}</b></div>
-        <div class="row"><span>IV ค้างรับรอตรวจสอบ</span><b class="num">${MB(rv.ivAging.total)}</b></div><div class="row"><span>กำไร / เงินสด</span><b>${NA('ยังไม่มีข้อมูลเพียงพอ')}</b></div></div>
-      <div class="card accent mini"><h3>การเดินระบบ <span class="sub">(ไฟล์ OM ${lm ? '· ' + TH[lm - 1] + ' 2569' : ''})</span></h3>
-        <div class="row"><span>ปริมาณน้ำรับจริงรวม</span><b class="num">${va !== null ? nf(va) + ' ลบ.ม.' : NA()}</b></div><div class="row"><span>เทียบเดือนเดียวกันปี 2568</span><b>${va !== null ? pctTxt(M.pct(va, vp)) : NA()}</b></div>
-        <div class="row"><span>เฟส 3 เทียบปริมาณตามสัญญา (OM ระบุ)</span><b>${a3 !== null && c3 ? nf(a3 / c3 * 100, 0) + '%' : NA()}</b></div><div class="row"><span>คุณภาพน้ำ / Downtime</span><b>${NA()}</b></div></div>
-      <div class="card accent warn mini"><h3>ความเสี่ยง</h3>
-        <div class="row"><span>สัดส่วนลูกค้ารายใหญ่สุด (สะสมปี)</span><b class="num">${cc.top ? nf(cc.top.share, 2) + '%' : NA()}</b></div><div class="row"><span>สัญญาใกล้ถึงกำหนด</span><b>${S.contracts && S.contracts.rows.length ? nf(S.contracts.rows.length) + ' สัญญาในทะเบียน' : NA('ยังไม่มีทะเบียนสัญญา')}</b></div>
-        <div class="row"><span>มูลค่าค่าปรับ/ข้อเรียกร้อง</span><b>${NA('ยังประเมินไม่ได้')}</b></div><div class="row"><span>เหตุส่งมอบขาด</span><b>${NA()}</b></div></div></div>
+      <button class="card accent navy kpi" ${drill(() => openTable(linesTable('ยอดเรียกเก็บ ' + thM(st.ym), monL, `วันที่ออก ${thDs(cm.from)} – ${thDs(cm.to)}`)))}><span class="lab">การขาย · ยอดเรียกเก็บสุทธิก่อน VAT · ${thM(st.ym)}</span><span class="val num">${k1[0]} <small>${k1[1]}</small></span>${delta(cm.pct, cmpLabel)}<span class="full num">${B(cm.cur.net)} บาท${partialNote(st.ym)}</span><span class="full num">สะสมปี ${MB(ytd.net)} · หัก Pre-Treatment ${MB(-ytd.deduction)}</span><span class="more">ดู BL ${nf(cm.cur.docs)} ฉบับ →</span></button>
+      <button class="card accent kpi" ${drill(goPage('ops'))}><span class="lab">การผลิต · ปริมาณน้ำรับจริง${lm ? ' · ' + TH[lm - 1] + ' 2569' : ''}</span><span class="val num">${va !== null ? nf(va) + ' <small>ลบ.ม.</small>' : NA()}</span>${va !== null ? delta(M.pct(va, vp), 'เทียบ ' + (lm ? TH[lm - 1] : '') + ' 2568') : ''}<span class="full num">${vy !== null && va !== null ? 'สะสม ม.ค.–' + TH[lm - 1] + ' ' + nf(vy) + ' ลบ.ม.' : 'ไฟล์ OM ไม่มีปริมาณน้ำของพื้นที่ที่เลือก'}${lm && lm < mo ? ' · ไฟล์ OM ถึง ' + TH[lm - 1] : ''}</span><span class="more">ดูการผลิตและสารเคมี →</span></button>
+      <button class="card accent sky kpi" ${drill(() => openTable(poLineTable('PO สารเคมี · ' + thM(st.ym), M.poSelect(S, { from: cm.from, to: cm.to, unit: st.unit, grp: 'chem' }))))}><span class="lab">ต้นทุนผลิต · PO สารเคมี · ${thM(st.ym)}</span><span class="val num">${k3[0]} <small>${k3[1]}</small></span><span class="full num">สะสมปี ${MB(gy.chem || 0)}${cpm ? ' · ' + nf(cpm.rate, 3) + ' บาท/ลบ.ม. (ม.ค.–' + TH[cpm.last - 1] + ')' : ''}</span><span class="full">มูลค่าสั่งซื้อตามวันที่ PO ไม่ใช่ปริมาณที่ใช้จริง</span><span class="more">ดูรายการ PO →</span></button>
+      <button class="card accent warn kpi" ${drill(goPage('maint'))}><span class="lab">ซ่อมบำรุง · PO เครื่องจักรและอะไหล่ · ${thM(st.ym)}</span><span class="val num">${k4[0]} <small>${k4[1]}</small></span><span class="full num">สะสมปี ${MB(gy.maint || 0)} · สินทรัพย์ ${MB(gy.capex || 0)}</span><span class="full">${S.maint ? `ใบงานแจ้งซ่อมเดือนนี้ ${nf(mwo.length)} · ค้าง ${nf(wst.open)} (เกิน SLA ${nf(wst.openOver.length)})` : 'ยังไม่มีไฟล์ใบงานแจ้งซ่อม'}</span><span class="more">ดู Maintenance Snapshot →</span></button></div>
     <div class="grid g2">
-      <section class="card"><div class="head"><div><h2>ค่าบริการ รายการหัก และยอดสุทธิรายเดือน</h2><p class="sub">BL ตามวันที่ออกเอกสาร ปี ${+asof.slice(0, 4) + 543} · ก่อน VAT · กดแท่งเพื่อดูเอกสาร${st.unit ? ' · ' + esc(M.unitLabel(st.unit, areas())) : ''}</p></div></div>
+      <section class="card"><div class="head"><div><h2>การขาย: ค่าบริการ รายการหัก และยอดสุทธิรายเดือน</h2><p class="sub">BL ตามวันที่ออกเอกสาร ปี ${+asof.slice(0, 4) + 543} · ก่อน VAT · กดแท่งเพื่อดูเอกสาร${st.unit ? ' · ' + esc(M.unitLabel(st.unit, areas())) : ''}</p></div></div>
         ${monthlyChart(ser, s => openTable(linesTable('ยอดเรียกเก็บ ' + thM(s.ym), M.selectLines(S, F({ from: s.ym + '-01', to: M.monthEnd(s.ym) })), 'ตามวันที่ออกเอกสาร')))}</section>
-      <section class="card"><div class="head"><div><h2>อันดับพื้นที่ตามยอดเรียกเก็บ · ${thM(st.ym)}</h2><p class="sub">สุทธิก่อน VAT${partialNote(st.ym)} · เฟส 1&2 ออกบิลรวมที่สำนักงานใหญ่ จึงแยกรายฟาร์มจาก TRCLOUD ไม่ได้</p></div></div>
-        ${units.length ? bars(units.map((u, i) => ({ label: u.label, v: u.net, txt: MB(u.net), cls: u.unit === 'P12' ? '' : u.unit === 'OTHER' ? 'b3' : 'b2', drill: () => openTable(linesTable(u.label + ' · ' + thM(st.ym), M.selectLines(S, { from: cm.from, to: cm.to, unit: u.unit }), 'ตามวันที่ออกเอกสาร')) })), umax) : '<div class="empty">ไม่มี BL ในช่วงที่เลือก</div>'}</section></div>
-    <section class="card"><div class="head"><div><h2>CEO Insights</h2><p class="sub">สร้างจากกฎและตัวเลขที่ตรวจย้อนได้ · ข้อมูล ณ ${thD(asof)}</p></div></div><div class="grid g2">${ins.map(insightHtml).join('')}</div></section>
-    <section class="card"><div class="head"><div><h2>รายการต้องติดตาม</h2><p class="sub">เรียงตามมูลค่า · แต่ละชุดแยกกัน ไม่ได้รวมเป็นยอดเดียว</p></div></div>
+      <section class="card"><div class="head"><div><h2>ต้นทุนผลิตจาก PO รายเดือน</h2><p class="sub">สารเคมี · ซ่อมบำรุง · สินทรัพย์ — มูลค่า PO ก่อน VAT ตามวันที่ออก PO · กดแท่งเพื่อดูรายการ${st.unit ? ' · ' + esc(M.unitLabel(st.unit, areas())) : ''}</p></div></div>
+        ${stackChart(cser, ckeys, s => openTable(poLineTable('PO ต้นทุนผลิต · ' + thM(s.ym), M.poSelect(S, { from: s.ym + '-01', to: M.monthEnd(s.ym), unit: st.unit, grp: ['chem', 'maint', 'capex'] }))), 'ต้นทุนผลิตจาก PO รายเดือน')}</section></div>
+    <section class="card"><div class="head"><div><h2>อันดับพื้นที่ตามยอดเรียกเก็บ · ${thM(st.ym)}</h2><p class="sub">สุทธิก่อน VAT${partialNote(st.ym)} · เฟส 1&2 ออกบิลรวมที่สำนักงานใหญ่ จึงแยกรายฟาร์มจาก TRCLOUD ไม่ได้</p></div></div>
+      ${units.length ? bars(units.map(u => ({ label: u.label, v: u.net, txt: MB(u.net), cls: u.unit === 'P12' ? '' : u.unit === 'OTHER' ? 'b3' : 'b2', drill: () => openTable(linesTable(u.label + ' · ' + thM(st.ym), M.selectLines(S, { from: cm.from, to: cm.to, unit: u.unit }), 'ตามวันที่ออกเอกสาร')) })), umax) : '<div class="empty">ไม่มี BL ในช่วงที่เลือก</div>'}</section>
+    <section class="card"><div class="head"><div><h2>CEO Insights</h2><p class="sub">การขาย · การผลิต · สารเคมี · ซ่อมบำรุง · การรับชำระ — สร้างจากกฎและตัวเลขที่ตรวจย้อนได้ · ข้อมูล ณ ${thD(asof)}</p></div></div><div class="grid g2">${ins.map(insightHtml).join('')}</div></section>
+    <section class="card"><div class="head"><div><h2>รายการต้องติดตาม (การเงิน)</h2><p class="sub">เรียงตามมูลค่า · แต่ละชุดแยกกัน ไม่ได้รวมเป็นยอดเดียว · รายละเอียดอยู่ในหน้าลูกหนี้และเจ้าหนี้</p></div></div>
       <div class="tbl-wrap"><table><thead><tr><th>เรื่อง</th><th>รายละเอียด</th><th class="r">มูลค่า (บาท)</th></tr></thead><tbody>${follow.map(x => `<tr class="rowlink" ${drill(x.f)} tabindex="0"><td><b style="font-weight:600;color:var(--navy)">${esc(x.t)}</b></td><td>${esc(x.d)}</td><td class="r num">${B(x.v)}</td></tr>`).join('')}</tbody></table></div></section>`;
   }
 
@@ -316,33 +404,75 @@
     <section class="card"><div class="head"><div><h2>รายพื้นที่ · ${TH[m - 1]} 2569</h2><p class="sub">แยกตัวเลขแต่ละชนิด: รับจริง / ตามสัญญา / แผนรับน้ำของ CP / แผนธุรกิจ / กำลังการผลิตสูงสุด ไม่ใช้แทนกัน · จุดวัด: ${NA('ยังไม่ระบุในไฟล์')}</p></div></div>${tableSlot(Object.assign(sc, { size: 13 }))}</section>
     <section class="card"><div class="head"><div><h2>ตรวจเทียบ: รายได้เฟส 3 ตามไฟล์ OM กับ BL ตามเดือนให้บริการ</h2><p class="sub">BL จัดเดือนตามวันสิ้นสุดช่วงให้บริการที่อ่านจากคำอธิบาย · ใช้ดูความสอดคล้องของสองแหล่ง ไม่ใช่การปรับยอด</p></div></div>
       <div class="tbl-wrap"><table><thead><tr><th>เดือนให้บริการ</th><th class="r">รายได้เฟส 3 ตาม OM (บาท)</th><th class="r">BL เฟส 3 ก่อน VAT (บาท)</th><th class="r">ผลต่าง (บาท)</th><th class="r">ผลต่าง %</th></tr></thead><tbody>${x3.map(x => `<tr><td>${TH[x.i - 1]} 2569</td><td class="r num">${x.om === null ? NA() : B(x.om)}</td><td class="r num">${B(x.bl)}</td><td class="r num">${x.om === null ? '–' : B(x.bl - x.om)}</td><td class="r num">${x.om ? pctTxt((x.bl - x.om) / x.om * 100) : NA('N/A')}</td></tr>`).join('')}</tbody></table></div>
-      <p class="note" style="margin-top:8px">รอบบิลเฟส 3 เป็นรายสัปดาห์และคร่อมเดือน จึงคาดว่ามีผลต่างระหว่างเดือนได้ · เดือนล่าสุดอาจยังออก BL ไม่ครบ</p></section>`;
+      <p class="note" style="margin-top:8px">รอบบิลเฟส 3 เป็นรายสัปดาห์และคร่อมเดือน จึงคาดว่ามีผลต่างระหว่างเดือนได้ · เดือนล่าสุดอาจยังออก BL ไม่ครบ</p></section>
+    ${chemSection()}`;
+  }
+  function chemSection() {
+    const asof = S.meta.asof, y0 = asof.slice(0, 4) + '-01-01', cs = chemSites(), ser = M.costMonthly(S, {}, +asof.slice(0, 4)), py = M.poSelect(S, { from: y0, to: asof, grp: 'chem' });
+    const items = {}; py.forEach(l => { const k = l.pid || '(ไม่ระบุ)'; const x = items[k] = items[k] || { k, names: {}, amt: 0, n: 0 }; x.amt += l.amt; x.n++; x.names[l.name] = 1; });
+    const it = Object.values(items).sort((a, b) => b.amt - a.amt), imax = Math.max(1, ...it.map(x => x.amt)), rmax = Math.max(0.0001, ...cs.rows.map(r => r.rate));
+    return `<div class="section-title">ต้นทุนการผลิต: สารเคมี</div>
+    <div class="grid g2">
+      <section class="card"><div class="head"><div><h2>PO สารเคมีรายเดือน ปี ${+asof.slice(0, 4) + 543}</h2><p class="sub">สะสม ${MB(M.sum(py, l => l.amt))} · ${nf(py.length)} บรรทัด · กดแท่งเพื่อดูรายการ · ${esc(poNote)}</p></div></div>
+        ${stackChart(ser, [{ k: 'chem', label: 'สารเคมี (หมวด RM)', c: GC.chem }], s => openTable(poLineTable('PO สารเคมี · ' + thM(s.ym), M.poSelect(S, { from: s.ym + '-01', to: M.monthEnd(s.ym), grp: 'chem' }))), 'PO สารเคมีรายเดือน')}
+        <div style="margin-top:12px">${bars(it.map(x => ({ label: x.k + ' ' + Object.keys(x.names)[0].slice(0, 28), v: x.amt, txt: MB(x.amt), cls: 'c', drill: () => openTable(poLineTable('PO สารเคมี ' + x.k, py.filter(l => (l.pid || '(ไม่ระบุ)') === x.k), 'สะสมปี')) })), imax)}</div></section>
+      <section class="card"><div class="head"><div><h2>สารเคมีต่อปริมาณน้ำรายพื้นที่ (บาท/ลบ.ม.)</h2><p class="sub">PO สารเคมีตาม department ÷ ปริมาณน้ำรับจริงตามไฟล์ OM · ม.ค.–${cs.last ? TH[cs.last - 1] : '–'} 2569${cs.total ? ' · ทั้งบริษัท ' + nf(cs.total.rate, 3) + ' บาท/ลบ.ม.' : ''}</p></div></div>
+        ${cs.rows.length ? bars(cs.rows.map(r => ({ label: r.name + ' · ' + r.site, v: r.rate, txt: nf(r.rate, 3), cls: 'c', drill: () => openTable(poLineTable('PO สารเคมี · ' + r.name, M.poSelect(S, { grp: 'chem' }).filter(l => l.dept === r.code), 'ทั้งปี')) })), rmax) : '<div class="empty">ยังไม่มีข้อมูล</div>'}
+        <p class="note" style="margin-top:8px">PO สั่งซื้อเข้าสต็อกล่วงหน้าได้ ค่ารายพื้นที่จึงเป็นค่าประมาณจนกว่าจะมีข้อมูลการเบิกใช้ · PO ที่ไม่ระบุพื้นที่หรือออกที่ส่วนกลางไม่ถูกนับในรายพื้นที่</p>
+        <div style="margin-top:10px">${tableSlot(Object.assign(chemSiteTable(cs), { size: 8 }))}</div></section></div>`;
   }
 
-  /* ---------- หน้า 6: สัญญาและความเสี่ยง ---------- */
-  function pContract() {
-    const asof = S.meta.asof, y0 = asof.slice(0, 4) + '-01-01', ytd = M.selectLines(S, { from: y0, to: asof }), yb = M.billing(ytd), cc = M.concentration(ytd), rv = M.receivables(S), o = M.om(S), C = S.contracts;
-    const lm = o ? o.last('volume', 'actual', 2026) : 0, a3 = o ? o.total('volume', 'actual', 2026, lm, 'Phase 3') : null, c3 = o ? o.total('volume', 'contract', 2026, lm, 'Phase 3') : null;
-    const p12 = (yb.byCat.svc_p12 || 0) + (yb.byCat.ded_pretreat || 0) + (yb.byCat.pretreat_charge || 0), p3 = yb.byCat.svc_p3 || 0;
-    const reg = C && C.rows.length ? tableSlot({ title: '', file: 'SAM_contracts', sort: 'days', dir: 1, rows: C.rows.map(r => Object.assign({ days: r.end_date ? M.daysBetween(asof, r.end_date) : null, ndays: r.notice_deadline ? M.daysBetween(asof, r.notice_deadline) : null }, r)),
-      cols: [{ k: 'contract_no', label: 'เลขสัญญา' }, { k: 'area', label: 'พื้นที่' }, { k: 'party', label: 'คู่สัญญา' }, { k: 'start_date', label: 'เริ่ม', fmt: r => thDs(r.start_date) }, { k: 'end_date', label: 'หมดอายุ', fmt: r => thDs(r.end_date) }, { k: 'days', label: 'วันคงเหลือ', r: 1, fmt: r => r.days === null ? NA() : nf(r.days) }, { k: 'notice_deadline', label: 'วันสุดท้ายที่ต้องแจ้ง', fmt: r => r.notice_deadline ? thDs(r.notice_deadline) + ' (อีก ' + nf(r.ndays) + ' วัน)' : NA() }, { k: 'alert', label: 'เกณฑ์เตือนภายใน', fmt: r => { const th = ((S.meta.settings || {}).contract_alert_days || []).filter(d => r.days !== null && r.days <= d); return th.length ? '<span class="tag wait">ภายใน ' + Math.min(...th) + ' วัน</span>' : '–'; }, csv: r => r.days }, { k: 'negotiation_status', label: 'สถานะเจรจา' }, { k: 'owner', label: 'ผู้รับผิดชอบ' }, { k: 'reference', label: 'เอกสารอ้างอิง' }] })
-      : `<div class="empty"><b>ยังไม่มีทะเบียนสัญญา</b> — ระบบจึงยังไม่แสดงวันหมดอายุ วันสุดท้ายที่ต้องแจ้ง วันคงเหลือ สถานะเจรจา หรือสัดส่วนยอดเรียกเก็บของสัญญาใกล้หมดอายุ<br>กรอกแม่แบบ <code>templates/contracts.csv</code> (รองรับวันที่ พ.ศ./ค.ศ.) แล้วรัน <code>python3 scripts/import_contracts.py &lt;ไฟล์&gt;</code> และ <code>python3 scripts/build_snapshot.py</code></div>`;
-    const risks = [
-      ['การกระจุกตัวของลูกค้า', 'fact', `${cc.top ? nf(cc.top.share, 2) : '–'}% ของยอดเรียกเก็บสะสมปีมาจากลูกค้ารายเดียว (${MB(cc.total)})`, 'BL ปี 2569 (TRCLOUD)', () => openTable(linesTable('BL สะสมปี', ytd, 'ทั้งหมด'))],
-      ['ปริมาณรับน้ำเฟส 3 ต่ำกว่าปริมาณตามสัญญาที่ OM ระบุ', 'fact', a3 !== null && c3 ? `${TH[lm - 1]} 2569 รับจริง ${nf(a3)} ลบ.ม. = ${nf(a3 / c3 * 100, 0)}% ของ ${nf(c3)} ลบ.ม./เดือน` : 'ยังไม่มีข้อมูล', 'ไฟล์ OM (ปริมาณน้ำ)', () => { st.page = 'ops'; location.hash = '#/ops'; }],
-      ['ข้อผูกพันส่งมอบและค่าปรับตามสัญญา', 'none', 'ยังประเมินไม่ได้ — ไม่มีเงื่อนไขสัญญา (รอบประเมิน จุดวัด ช่วงผ่อนผัน เพดาน ข้อยกเว้น) จึงไม่แปลงปริมาณที่ต่ำกว่าเป็นมูลค่า', 'รอเอกสารสัญญา', null],
-      ['รายการหัก Pre-Treatment', 'wait', `หักสะสมปี ${MB(-(yb.byCat.ded_pretreat || 0))} ภายใต้ ${facts().codes.length} รหัส — ยังไม่ยืนยันลักษณะรายการ และไม่ถือเป็นค่าปรับ`, 'BL ปี 2569 (TRCLOUD)', () => openTable(linesTable('บรรทัด Pre-Treatment', ytd.filter(l => l.cat === 'ded_pretreat' || l.cat === 'pretreat_charge'), 'สะสมปี'))],
-      ['IV ค้างรับช่วงต้นปียังไม่ตัดชำระ', 'wait', `${nf(rv.iv.length)} ฉบับ ${MB(rv.ivAging.total)} — รอกระทบยอดกับเงินรับ`, 'get_receivable_due (TRCLOUD)', () => openTable(recvTable('IV ค้างรับ', rv.iv, 'ยอดหลังหัก WHT'))],
-      ['กำหนดสัญญาและการต่ออายุ', 'none', 'ยังไม่มีทะเบียนสัญญา — ไม่สรุปโอกาสต่ออายุหรือรายได้ที่อาจสูญเสีย', 'รอทะเบียนสัญญา', null],
-      ['คุณภาพน้ำและเหตุหยุดระบบ', 'none', 'ยังไม่มีข้อมูลผลตรวจคุณภาพน้ำ Downtime และ PM', 'รอไฟล์ OM', null]];
-    const tg = { fact: ['fact', 'ข้อเท็จจริงจากข้อมูล'], wait: ['wait', 'รอยืนยัน'], none: ['none', 'ยังไม่มีข้อมูล'] };
-    return `<section class="card"><div class="head"><div><h2>ทะเบียนสัญญาและการต่ออายุ</h2><p class="sub">แยกตามพื้นที่และคู่สัญญา · เกณฑ์เตือนภายในตั้งค่าใน config/settings.json แยกจากกำหนดตามสัญญา</p></div></div>${reg}</section>
+  /* ---------- หน้า 6: Maintenance Snapshot (ใบงานแจ้งซ่อม + PO ซ่อมบำรุง) ---------- */
+  function pMaint() {
+    const asof = S.meta.asof, y0 = asof.slice(0, 4) + '-01-01', cm = M.compareMonth(S, st.ym, F()), to = selTo(), u = st.unit, mt = S.maint;
+    const pm = M.poSelect(S, { from: cm.from, to: cm.to, unit: u }), py = M.poSelect(S, { from: y0, to, unit: u }), gm = M.costByGroup(pm), gy = M.costByGroup(py);
+    const ppm = cm.prev ? M.costByGroup(M.poSelect(S, { from: cm.pfrom, to: cm.pto, unit: u })) : null;
+    const cser = M.costMonthly(S, { unit: u }, +asof.slice(0, 4)), mkeys = [{ k: 'maint', label: 'ซ่อมบำรุง-เครื่องจักรและอะไหล่ (5131xxx · 5111001 · SU)', c: GC.maint }, { k: 'capex', label: 'สินทรัพย์ (1701xxx)', c: GC.capex }, { k: 'facility', label: 'ซ่อมอาคาร/สำนักงาน/ยานพาหนะ (5308xxx)', c: GC.facility }];
+    const maintLines = py.filter(l => ['maint', 'capex', 'facility'].indexOf(l.grp) >= 0);
+    const banner = `<div class="empty" style="border-style:solid">ค่าซ่อมบำรุงใช้<b>มูลค่าใบสั่งซื้อ PO</b> จาก TRCLOUD (ก่อน VAT ตามวันที่ออก PO ไม่รวม PO ยกเลิก) จัดกลุ่มตามรหัสบัญชี — เป็นมูลค่าสั่งซื้อ ไม่ใช่ค่าใช้จ่ายที่รับรู้ตามงวด · ใบงานแจ้งซ่อมมาจากไฟล์ ${mt ? `"${esc(mt.source.file)}" (นำเข้า ${thT(mt.source.imported_at)} · แจ้งซ่อม ${thDs(mt.source.reported_from)} – ${thDs(mt.source.reported_to)})` : NA('ยังไม่ได้นำเข้า')} · ใบงานกับ PO ไม่มีเลขอ้างอิงถึงกัน${u ? ' · ตัวกรองพื้นที่ไม่แสดงใบงานที่ระบุพื้นที่ไม่ได้' : ''}</div>`;
+    const costKpi = `<button class="card accent warn kpi" ${drill(() => openTable(poLineTable('PO ซ่อมบำรุงและสินทรัพย์ · ' + thM(st.ym), pm.filter(l => ['maint', 'capex', 'facility'].indexOf(l.grp) >= 0))))}><span class="lab">PO ซ่อมบำรุง-เครื่องจักรและอะไหล่ · ${thM(st.ym)}</span><span class="val num">${MBv(gm.maint || 0)[0]} <small>${MBv(gm.maint || 0)[1]}</small></span>${ppm ? delta(M.pct(gm.maint || 0, ppm.maint || 0), cm.prev ? 'เทียบ ' + thDs(cm.pfrom) + '–' + thDs(cm.pto) : '') : ''}<span class="full num">สะสมปี ${MB(gy.maint || 0)} · สินทรัพย์ ${MB(gy.capex || 0)} · ซ่อมอาคาร/สำนักงาน ${MB(gy.facility || 0)}</span><span class="more">ดูรายการ PO →</span></button>`;
+    if (!mt) return banner + `<div class="grid g4">${costKpi}</div><section class="card"><div class="head"><div><h2>PO ซ่อมบำรุงรายเดือน</h2></div></div>${stackChart(cser, mkeys, s => openTable(poLineTable('PO ซ่อมบำรุง · ' + thM(s.ym), M.poSelect(S, { from: s.ym + '-01', to: M.monthEnd(s.ym), unit: u, grp: ['maint', 'capex', 'facility'] }))), 'PO ซ่อมบำรุงรายเดือน')}</section><div class="state">ยังไม่มีใบงานแจ้งซ่อม — นำเข้าด้วย <code>python3 scripts/import_maintenance.py om/&lt;ไฟล์&gt;.xlsx</code></div>`;
+    const all = M.woSelect(S, { unit: u }), mon = M.woSelect(S, { from: cm.from, to: cm.to, unit: u }), prv = cm.prev ? M.woSelect(S, { from: cm.pfrom, to: cm.pto, unit: u }) : null, ytd = M.woSelect(S, { from: y0, to, unit: u });
+    const sm = M.woStats(mon, asof), sa = M.woStats(all, asof), sy = M.woStats(ytd, asof);
+    const oldest = sa.openRows.slice().sort((a, b) => a.reported < b.reported ? -1 : 1)[0];
+    // แนวโน้มใบงานรายเดือน ปีปัจจุบัน
+    const ms = M.months(S), lab = ms.map(x => TH[+x.slice(5) - 1]), opened = ms.map(x => all.filter(r => r.reported.slice(0, 7) === x).length), closed = ms.map(x => all.filter(r => r.done_at && r.done_at.slice(0, 7) === x).length);
+    const backlog = ms.map(x => { const e = M.monthEnd(x) > asof ? asof : M.monthEnd(x); return all.filter(r => r.state !== 'rejected' && r.reported.slice(0, 10) <= e && !(r.done_at && r.done_at.slice(0, 10) <= e)).length; });
+    const base = ytd.filter(r => r.state !== 'rejected');
+    const cnt = (key, n) => { const c = M.countBy(base, key).slice(0, n || 8), mx = Math.max(1, ...c.map(x => x.n)); return c.length ? bars(c.map(x => ({ label: x.k, v: x.n, txt: nf(x.n), drill: () => openTable(woTable(x.k, base.filter(r => key(r) === x.k), 'ปี 2569')) })), mx) : '<div class="empty">ไม่มีใบงาน</div>'; };
+    // เครื่องจักรที่แจ้งซ่อมซ้ำ (ทั้งไฟล์)
+    const rep = M.countBy(all.filter(r => r.qr && r.state !== 'rejected'), r => r.qr).filter(x => x.n >= 3).map(x => { const rs = all.filter(r => r.qr === x.k); const l = rs.slice().sort((a, b) => a.reported < b.reported ? 1 : -1)[0]; return { qr: x.k, n: x.n, machine: l.machine, mtype: l.mtype, site: siteName(l), last: l.reported.slice(0, 10), open: rs.filter(r => r.state === 'open').length, rows: rs }; });
+    // รายพื้นที่: ใบงาน + PO
+    const ar = areas(), sites = S.areas.filter(a => a.om_site && (!u || M.deptUnit(a.code, ar) === u)).map(a => { const w = ytd.filter(r => r.site === a.om_site), pl = py.filter(l => l.dept === a.code), g = M.costByGroup(pl);
+      return { name: a.name, site: a.om_site, phase: a.phase, wo: w.filter(r => r.state !== 'rejected').length, open: sa.openRows.filter(r => r.site === a.om_site).length, maint: g.maint || 0, capex: g.capex || 0, chem: g.chem || 0, rows: w, lines: pl }; });
+    const nosite = ytd.filter(r => !r.site && r.state !== 'rejected').length, other = py.filter(l => !(ar[l.dept] || {}).om_site && ['maint', 'capex', 'facility'].indexOf(l.grp) >= 0);
+    const accs = {}; maintLines.forEach(l => { const k = l.acc || (l.pcat ? 'หมวด ' + l.pcat : l.pid); const x = accs[k] = accs[k] || { k, amt: 0, n: 0 }; x.amt += l.amt; x.n++; });
+    const acc = Object.values(accs).sort((a, b) => b.amt - a.amt), amax = Math.max(1, ...acc.map(x => x.amt));
+    const mx = M.woMatches(S, ytd), mi = maintInsights();
+    return banner + `<div class="grid g4">
+      <button class="card accent navy kpi" ${drill(() => openTable(woTable('ใบงานแจ้งซ่อม · ' + thM(st.ym), mon, 'ตามวันที่แจ้ง')))}><span class="lab">ใบงานแจ้งซ่อม · ${thM(st.ym)}</span><span class="val num">${nf(mon.length)} <small>ใบงาน</small></span>${prv ? delta(M.pct(mon.length, prv.length), 'เทียบ ' + thDs(cm.pfrom) + '–' + thDs(cm.pto) + ' (' + nf(prv.length) + ')') : ''}<span class="full">ปิดแล้ว ${nf(sm.done)} · ค้าง ${nf(sm.open)} · ถูกปฏิเสธ ${nf(sm.rejected)} · ด่วนมาก ${nf(sm.urgent)}</span><span class="more">ดูใบงาน →</span></button>
+      <button class="card accent warn kpi" ${drill(() => openTable(woTable('ใบงานที่ยังค้าง', sa.openRows, 'ณ ' + thD(asof))))}><span class="lab">ใบงานค้าง · ณ ${thDs(asof)}</span><span class="val num">${nf(sa.open)} <small>ใบงาน</small></span><span class="full">เกิน SLA แล้ว ${nf(sa.openOver.length)} ใบงาน</span><span class="full">${oldest ? 'ค้างนานสุด ' + nf(M.woAgeDays(oldest, asof)) + ' วัน (แจ้ง ' + thDs(oldest.reported.slice(0, 10)) + ')' : 'ไม่มีใบงานค้าง'}</span><span class="more">ดูใบงานค้าง →</span></button>
+      <button class="card accent kpi" ${drill(() => openTable(woTable('ใบงานปี 2569 ที่ปิดแล้วและมี SLA', ytd.filter(r => r.state === 'done' && r.sla_h), 'เทียบเวลาแจ้ง→ซ่อมเสร็จกับ SLA ในใบงาน')))}><span class="lab">ปิดงานทัน SLA · ปี 2569</span><span class="val num">${sy.slaPct !== null ? nf(sy.slaPct, 0) + '<small>%</small>' : NA('N/A')}</span><span class="full">${nf(sy.slaOk)} จาก ${nf(sy.slaN)} ใบงานที่มี SLA · ไม่ระบุ SLA ${nf(sy.noSla)}</span><span class="full">ค่ากลาง: มอบหมาย ${sy.medAssignH !== null ? nf(sy.medAssignH, 1) + ' ชม.' : '–'} · ซ่อมเสร็จ ${sy.medDoneD !== null ? nf(sy.medDoneD, 1) + ' วัน' : '–'}</span><span class="more">ดูใบงาน →</span></button>
+      ${costKpi}</div>
+    <div class="grid g2">
+      <section class="card"><div class="head"><div><h2>PO ซ่อมบำรุงและสินทรัพย์รายเดือน</h2><p class="sub">มูลค่า PO ก่อน VAT ตามวันที่ออก PO · กดแท่งเพื่อดูรายการ${u ? ' · ' + esc(M.unitLabel(u, ar)) : ''}</p></div></div>
+        ${stackChart(cser, mkeys, s => openTable(poLineTable('PO ซ่อมบำรุงและสินทรัพย์ · ' + thM(s.ym), M.poSelect(S, { from: s.ym + '-01', to: M.monthEnd(s.ym), unit: u, grp: ['maint', 'capex', 'facility'] }))), 'PO ซ่อมบำรุงรายเดือน')}</section>
+      <section class="card"><div class="head"><div><h2>ใบงานแจ้งซ่อมรายเดือน ปี ${+asof.slice(0, 4) + 543}</h2><p class="sub">แจ้งใหม่ (ตามวันที่แจ้ง) · ปิดงาน (ตามวันที่ซ่อมเสร็จ) · ค้างสิ้นเดือน · ไม่นับใบงานที่ถูกปฏิเสธในยอดค้าง</p></div></div>
+        ${lineChart(lab, [{ name: 'แจ้งใหม่', c: 'var(--bar1)', v: opened, w: 2.6 }, { name: 'ปิดงาน', c: 'var(--chem)', v: closed }, { name: 'ค้าง ณ สิ้นเดือน', c: 'var(--warn)', v: backlog, dash: 1 }], 'ใบงาน', v => nf(v))}</section></div>
     <div class="grid g3">
-      <div class="card accent navy mini"><h3>ยอดเรียกเก็บย้อนหลังแยกเฟส <span class="sub">(สะสมปี 2569 · ก่อน VAT)</span></h3><div class="row"><span>เฟส 1&2 (สุทธิหลังรายการหัก)</span><b class="num">${MB(p12)}</b></div><div class="row"><span>เฟส 3</span><b class="num">${MB(p3)}</b></div><div class="row"><span>สัดส่วนเฟส 1&2 : เฟส 3</span><b class="num">${nf(p12 / (p12 + p3) * 100, 0)} : ${nf(p3 / (p12 + p3) * 100, 0)}</b></div><p class="note">ยอดย้อนหลังไม่ใช่มูลค่างานคงเหลือหรือรายได้ที่จะสูญเสีย · ยังผูกกับเลขสัญญาไม่ได้จนกว่าจะมีทะเบียนสัญญา</p></div>
-      <div class="card accent mini"><h3>ปริมาณตามสัญญาที่ OM ระบุ <span class="sub">(ไฟล์ OM เดือนล่าสุด)</span></h3><div class="row"><span>เฟส 1&2</span><b class="num">${omPhase('contract', 'Phase 1&2') !== null ? nf(omPhase('contract', 'Phase 1&2')) + ' ลบ.ม./เดือน' : NA()}</b></div><div class="row"><span>เฟส 3</span><b class="num">${omPhase('contract', 'Phase 3') !== null ? nf(omPhase('contract', 'Phase 3')) + ' ลบ.ม./เดือน' : NA()}</b></div><div class="row"><span>Max capacity เฟส 1&2 / เฟส 3</span><b class="num">${omPhase('max_capacity', 'Phase 1&2') !== null ? nf(omPhase('max_capacity', 'Phase 1&2')) : '–'} / ${omPhase('max_capacity', 'Phase 3') !== null ? nf(omPhase('max_capacity', 'Phase 3')) : '–'}</b></div><p class="note">ค่าจากตารางในไฟล์ OM — ค่าเปลี่ยนได้ระหว่างปี ต้องตรวจกับสัญญาและฉบับแก้ไขก่อนใช้เป็นฐานข้อผูกพัน</p></div>
-      <div class="card accent warn mini"><h3>ความเสี่ยงส่งมอบและค่าปรับ</h3><div class="row"><span>① ต่ำกว่าเป้าภายใน OM</span><b>${NA('ยังไม่มีเป้าภายใน')}</b></div><div class="row"><span>② อาจไม่เป็นไปตามข้อผูกพันในสัญญา</span><b>${NA('รอเงื่อนไขสัญญา')}</b></div><div class="row"><span>③ มูลค่าความเสี่ยงที่ประเมินตามกฎ</span><b>${NA('ยังประเมินไม่ได้')}</b></div><div class="row"><span>④ ค่าปรับ/ยอดหักที่ยืนยันแล้ว</span><b>${NA('ยังไม่มีข้อมูล')}</b></div></div></div>
-    <section class="card"><div class="head"><div><h2>Risk Register</h2><p class="sub">แยกข้อเท็จจริง ข้อมูลที่รอยืนยัน และส่วนที่ยังไม่มีข้อมูล · ไม่ให้คะแนนหรือสีระดับความเสี่ยงเพราะยังไม่มีนิยามรองรับ</p></div></div>
-      <div class="tbl-wrap"><table><thead><tr><th>ประเด็น</th><th>ประเภท</th><th>สิ่งที่ทราบ</th><th>แหล่งที่มา</th><th>ผู้รับผิดชอบ/กำหนด</th></tr></thead><tbody>${risks.map(r => `<tr><td><b style="font-weight:600;color:var(--navy)">${esc(r[0])}</b></td><td><span class="tag ${tg[r[1]][0]}">${tg[r[1]][1]}</span></td><td>${esc(r[2])}</td><td>${r[4] ? `<button class="link" ${drill(r[4])}>${esc(r[3])}</button>` : esc(r[3])}</td><td>${NA()}</td></tr>`).join('')}</tbody></table></div></section>`;
+      <section class="card"><div class="head"><div><h2>ประเภทเครื่องจักรที่แจ้งซ่อม</h2><p class="sub">ปี 2569 · ไม่นับที่ถูกปฏิเสธ (${nf(base.length)} ใบงาน)</p></div></div>${cnt(r => r.mtype)}</section>
+      <section class="card"><div class="head"><div><h2>อาการเสีย</h2><p class="sub">ตามรหัสอาการเสียในใบงาน</p></div></div>${cnt(r => r.fdesc ? r.fcode + ' ' + r.fdesc : '')}</section>
+      <section class="card"><div class="head"><div><h2>วิธีซ่อม</h2><p class="sub">ตามรหัสอาการซ่อมในใบงาน</p></div></div>${cnt(r => r.rdesc ? r.rcode + ' ' + r.rdesc : '')}</section></div>
+    <div class="grid g2">
+      <section class="card"><div class="head"><div><h2>รายพื้นที่: ใบงานและ PO ปี 2569</h2><p class="sub">ใบงานจับพื้นที่จากรหัส QR/ชื่อโครงการในคำอธิบาย · PO ตาม department · ใบงานระบุพื้นที่ไม่ได้ ${nf(nosite)} รายการ · PO ซ่อมบำรุงที่ออกในหน่วยงานส่วนกลาง ${MB(M.sum(other, l => l.amt))}</p></div></div>
+        <div class="tbl-wrap"><table><thead><tr><th>พื้นที่</th><th>เฟส</th><th class="r">ใบงาน</th><th class="r">ค้าง</th><th class="r">PO ซ่อมบำรุง</th><th class="r">PO สินทรัพย์</th><th class="r">PO สารเคมี</th></tr></thead><tbody>${sites.sort((a, b) => (b.maint + b.capex) - (a.maint + a.capex)).map(r => `<tr class="rowlink" ${drill(() => openTable(poLineTable('PO · ' + r.name, r.lines, 'ปี 2569')))} tabindex="0"><td>${esc(r.name)} <span class="note">${esc(r.site)}</span></td><td>${esc((r.phase || '').replace('Phase ', 'เฟส '))}</td><td class="r num">${nf(r.wo)}</td><td class="r num">${r.open ? nf(r.open) : '–'}</td><td class="r num">${B(r.maint)}</td><td class="r num">${B(r.capex)}</td><td class="r num">${B(r.chem)}</td></tr>`).join('')}</tbody></table></div></section>
+      <section class="card"><div class="head"><div><h2>PO ซ่อมบำรุงตามรหัสบัญชี</h2><p class="sub">ปี 2569 · รวม ${MB(M.sum(maintLines, l => l.amt))} · ${nf(maintLines.length)} บรรทัด</p></div></div>${bars(acc.map(x => ({ label: x.k.indexOf('หมวด') === 0 ? x.k + ' (อะไหล่/วัสดุ)' : accName(x.k), v: x.amt, txt: MB(x.amt), drill: () => openTable(poLineTable(x.k, maintLines.filter(l => (l.acc || (l.pcat ? 'หมวด ' + l.pcat : l.pid)) === x.k), 'ปี 2569')) })), amax)}</section></div>
+    <section class="card"><div class="head"><div><h2>Maintenance Insights</h2><p class="sub">สร้างจากกฎและตัวเลขที่ตรวจย้อนได้ · ใบงานจากไฟล์แจ้งซ่อม · ค่าใช้จ่ายจาก PO</p></div></div><div class="grid g2">${mi.map(insightHtml).join('')}</div></section>
+    <section class="card"><div class="head"><div><h2>เครื่องจักรที่แจ้งซ่อมซ้ำ (≥ 3 ใบงาน)</h2><p class="sub">นับตามรหัส QR ทุกช่วงในไฟล์ (${thDs(mt.source.reported_from)} – ${thDs(mt.source.reported_to)}) · ไม่นับใบงานที่ถูกปฏิเสธ</p></div></div>${rep.length ? tableSlot({ title: '', file: 'SAM_repeat_machines', sort: 'n', dir: -1, size: 8, rows: rep,
+      cols: [{ k: 'qr', label: 'QR Code' }, { k: 'machine', label: 'เครื่องจักร' }, { k: 'mtype', label: 'ประเภท' }, { k: 'site', label: 'พื้นที่' }, { k: 'n', label: 'ใบงาน', r: 1 }, { k: 'open', label: 'ค้าง', r: 1 }, { k: 'last', label: 'แจ้งล่าสุด', fmt: r => thDs(r.last) }, { k: 'x', label: '', fmt: r => `<button class="link" ${drill(() => openTable(woTable('ใบงานของ ' + r.qr, r.rows)))}>ดูใบงาน</button>`, csv: () => '' }] }) : '<div class="empty">ไม่มีเครื่องที่แจ้งซ่อมซ้ำ</div>'}</section>
+    <section class="card"><div class="head"><div><h2>ใบงานที่ยังค้าง</h2><p class="sub">ณ ${thD(asof)} · เรียงจากค้างนานสุด · SLA อ่านจากระดับความด่วนในใบงาน</p></div></div>${tableSlot(Object.assign(woTable('', sa.openRows), { sort: 'age', dir: -1, size: 10 }))}</section>
+    <section class="card"><div class="head"><div><h2>ใบงาน ↔ PO: จับคู่ที่เป็นไปได้ <span class="tag wait">รอยืนยัน</span></h2><p class="sub">${nf(mx.length)} ใบงานปี 2569 มี PO ที่อาจเกี่ยวข้อง — ใช้เป็นจุดเริ่มตรวจสอบเท่านั้น จนกว่าจะเพิ่มเลขที่ PR/PO ในใบงาน</p></div></div>${tableSlot(Object.assign(matchTable(mx), { size: 10 }))}</section>
+    <section class="card"><div class="head"><div><h2>รายการ PO ซ่อมบำรุงและสินทรัพย์</h2><p class="sub">ปี 2569 ถึง ${thDs(to)}${u ? ' · ' + esc(M.unitLabel(u, ar)) : ''}</p></div></div>${tableSlot(Object.assign(poLineTable('', maintLines), { size: 12 }))}</section>`;
   }
 
   /* ---------- หน้า 7: สถานะข้อมูล ---------- */
@@ -351,11 +481,18 @@
     const defs = [['ยอดเรียกเก็บสุทธิก่อน VAT', 'ผลรวม before_vat ของทุกบรรทัด BL (รายงาน B3) ตามวันที่ออกเอกสาร รวมรายการหักที่ติดลบ · ไม่บวก IV'], ['ค่าบริการก่อนรายการหัก', 'ผลรวมบรรทัด BL ทุกหมวดที่ไม่ใช่รายการหัก'], ['รายการหัก', 'บรรทัดที่ชื่อระบุ Pre-Treatment และยอดติดลบ (รหัส 5111002 / 5131000)'],
       ['BL ที่ยังชำระไม่ครบ', 'BL ปี 2569 สถานะ Debtor · คงเหลือ = grand_total − payment (รวม VAT) · BL สถานะ Partial ที่คงเหลือ = 3% ของยอดก่อน VAT จัดเป็นส่วนต่าง WHT ไม่นับเป็นค้างชำระ'], ['IV ค้างรับ', 'รายการจาก get_receivable_due (amount = คงค้างหลังหัก WHT) แสดงแยก สถานะ "รอตรวจสอบการตัดชำระ"'],
       ['อายุหนี้', 'วันที่อ้างอิง − วันครบกำหนด: ยังไม่ครบ / วันนี้ / 1–30 / 31–60 / 61–90 / >90 วัน'], ['เจ้าหนี้ครบกำหนด', 'get_payable_due (amount = คงค้างหลังหัก WHT) จัดกลุ่มตามวันครบกำหนดเทียบวันที่อ้างอิง · เอกสารลงวันที่อนาคตแยกออก · AP/EXP ไม่นับซ้ำด้วยประเภท+เลขที่'],
-      ['ภาระ PO', 'PO อนุมัติแล้ว สถานะ New/Partial และ backlog_ap > 0 (ก่อน VAT) — แยกจากเจ้าหนี้'], ['เทียบเดือน', 'เดือนเต็มเทียบเดือนเต็ม · เดือนปัจจุบันเทียบช่วงวันเท่ากันของเดือนก่อน · ฐานเป็นศูนย์หรือไม่มีข้อมูลแสดง N/A'], ['การปัดเศษ', 'คำนวณด้วย Decimal ปัดครึ่งขึ้นเป็นสตางค์ต่อบรรทัด แล้วรวมเป็นจำนวนเต็ม']];
+      ['ภาระ PO', 'PO อนุมัติแล้ว สถานะ New/Partial และ backlog_ap > 0 (ก่อน VAT) — แยกจากเจ้าหนี้'], ['เทียบเดือน', 'เดือนเต็มเทียบเดือนเต็ม · เดือนปัจจุบันเทียบช่วงวันเท่ากันของเดือนก่อน · ฐานเป็นศูนย์หรือไม่มีข้อมูลแสดง N/A'], ['การปัดเศษ', 'คำนวณด้วย Decimal ปัดครึ่งขึ้นเป็นสตางค์ต่อบรรทัด แล้วรวมเป็นจำนวนเต็ม'],
+      ['ต้นทุนจาก PO', 'บรรทัด PO (รายงาน PO3) ไม่รวม PO ยกเลิก · มูลค่าก่อน VAT ตามวันที่ออก PO — เป็นมูลค่าสั่งซื้อ ไม่ใช่ค่าใช้จ่ายที่รับรู้ตามงวดบัญชี'],
+      ['กลุ่มต้นทุน', 'สารเคมี = หมวดสินค้า RM (บัญชี 5101004) · ซ่อมบำรุง = 5131xxx, 5111001 และหมวดสินค้า SU · สินทรัพย์ = 1701xxx · บริการ/ตรวจวิเคราะห์ = 5111000, 5111002, 5141000, 5306002 · ซ่อมอาคาร/สำนักงาน/ยานพาหนะ = 5308xxx · อื่น ๆ = ที่เหลือ'],
+      ['สารเคมีต่อปริมาณน้ำ', 'PO สารเคมีสะสม ÷ ปริมาณน้ำรับจริงตามไฟล์ OM ในเดือนเดียวกัน (ม.ค. ถึงเดือนล่าสุดของไฟล์ OM) · รายพื้นที่ใช้ department ของ PO จับกับรหัสพื้นที่ OM'],
+      ['ใบงานค้าง / SLA', 'ค้าง = สถานะที่ไม่ใช่ ปิดงาน / ซ่อมแล้ว รอประเมิน / ถูกปฏิเสธ · ทัน SLA = เวลาแจ้ง→ซ่อมเสร็จ ≤ SLA ที่ระบุในระดับความด่วน · ระดับที่ไม่ระบุ SLA ไม่นับ'],
+      ['เครื่องจักรเสียซ้ำ', 'รหัส QR เดียวกันมีใบงาน (ไม่นับที่ถูกปฏิเสธ) ตั้งแต่ 3 ใบขึ้นไปในไฟล์ — เป็นเกณฑ์แสดงผล ไม่ใช่มาตรฐานของบริษัท'],
+      ['จับคู่ใบงาน ↔ PO', 'พื้นที่เดียวกัน + PO ออกภายใน 7 วันก่อนถึง 60 วันหลังวันแจ้ง + มีคำสำคัญอุปกรณ์ร่วมกัน (วาล์ว ปั๊ม ท่อ ไดอะแฟรม ฯลฯ) · สถานะ "รอยืนยัน" เสมอ']];
     return `<div class="grid g3">
       <div class="card accent navy mini"><h3>แหล่งข้อมูลและช่วงที่ดึง</h3><div class="row"><span>โหมด</span><b>Snapshot (ไม่ได้เชื่อมต่อสด)</b></div><div class="row"><span>แหล่ง</span><b style="white-space:normal;text-align:right">${esc(m.source)}</b></div><div class="row"><span>ดึงข้อมูล</span><b>${thT(m.fetched_from)} – ${m.fetched_to.slice(11, 16)} น.</b></div><div class="row"><span>ช่วงวันที่เอกสาร</span><b>${thDs(m.period_from)} – ${thDs(m.period_to)}</b></div><div class="row"><span>วันที่อ้างอิง (อายุหนี้)</span><b>${thD(m.asof)}</b></div></div>
       <div class="card accent ${bad.length ? 'warn' : ''} mini"><h3>ผลการตรวจและกระทบยอด</h3><div class="row"><span>ผ่าน</span><b class="num">${nf(m.checks.length - bad.length)} จาก ${nf(m.checks.length)} ข้อ</b></div>${bad.map(c => `<div class="row"><span>${esc(c.name)}</span><b style="white-space:normal;text-align:right;color:var(--warn)">${esc(c.detail)}</b></div>`).join('')}</div>
-      <div class="card accent mini"><h3>ไฟล์ OM</h3>${o ? `<div class="row"><span>ไฟล์</span><b style="white-space:normal;text-align:right">${esc(o.source.file)}</b></div><div class="row"><span>นำเข้า</span><b>${thT(o.source.imported_at)} · rev ${o.source.revision}</b></div><div class="row"><span>จำนวนค่า / ตาราง</span><b class="num">${nf(o.series.length)} / ${nf(o.blocks.length)}</b></div><div class="row"><span>ข้อมูลถึง</span><b>${TH[M.om(S).last('volume', 'actual', 2026) - 1]} 2569</b></div><div class="row"><span>sha256</span><b>${esc(o.source.sha256.slice(0, 16))}…</b></div>` : NA()}</div></div>
+      <div class="card accent mini"><h3>ไฟล์ OM</h3>${o ? `<div class="row"><span>ไฟล์</span><b style="white-space:normal;text-align:right">${esc(o.source.file)}</b></div><div class="row"><span>นำเข้า</span><b>${thT(o.source.imported_at)} · rev ${o.source.revision}</b></div><div class="row"><span>จำนวนค่า / ตาราง</span><b class="num">${nf(o.series.length)} / ${nf(o.blocks.length)}</b></div><div class="row"><span>ข้อมูลถึง</span><b>${TH[M.om(S).last('volume', 'actual', 2026) - 1]} 2569</b></div><div class="row"><span>sha256</span><b>${esc(o.source.sha256.slice(0, 16))}…</b></div>` : NA()}</div>
+      <div class="card accent sky mini"><h3>ไฟล์ใบงานแจ้งซ่อม</h3>${S.maint ? `<div class="row"><span>ไฟล์</span><b style="white-space:normal;text-align:right">${esc(S.maint.source.file)}</b></div><div class="row"><span>นำเข้า</span><b>${thT(S.maint.source.imported_at)}</b></div><div class="row"><span>ใบงาน</span><b class="num">${nf(S.maint.source.rows)} รายการ · ระบุพื้นที่ได้ ${nf(S.maint.rows.filter(r => r.site).length)}</b></div><div class="row"><span>วันที่แจ้ง</span><b>${thDs(S.maint.source.reported_from)} – ${thDs(S.maint.source.reported_to)}</b></div><div class="row"><span>sha256</span><b>${esc(S.maint.source.sha256.slice(0, 16))}…</b></div><p class="note">ไม่มีคอลัมน์ค่าใช้จ่าย · ไม่เก็บชื่อผู้แจ้ง/ผู้รับผิดชอบ</p>` : NA()}</div></div>
     <section class="card"><div class="head"><div><h2>ชุดข้อมูล</h2><p class="sub">จำนวนแถว/เอกสาร วันที่เอกสารล่าสุด และความครบถ้วนของแต่ละชุด</p></div></div><div class="tbl-wrap"><table><thead><tr><th>ชุดข้อมูล</th><th>เครื่องมือ (อ่านอย่างเดียว)</th><th class="r">คำขอ</th><th class="r">แถว</th><th class="r">เอกสาร</th><th>เอกสารล่าสุด</th><th>ดึงเมื่อ</th><th>ครบถ้วน</th><th>หมายเหตุ</th></tr></thead><tbody>
       ${m.datasets.map(d => `<tr><td>${esc(d.label)}</td><td>${esc(d.tools.join(', '))}</td><td class="r num">${d.calls}</td><td class="r num">${nf(d.rows)}</td><td class="r num">${d.docs == null ? '–' : nf(d.docs)}</td><td>${d.last_doc_date ? thDs(d.last_doc_date) : '–'}</td><td>${d.fetched_at ? d.fetched_at.slice(11, 16) + ' น.' : '–'}</td><td>${d.complete ? 'ครบ' : '<span class="tag wait">ตรวจสอบ</span>'}</td><td>${esc(d.note)}</td></tr>`).join('')}</tbody></table></div></section>
     <section class="card"><div class="head"><div><h2>ผลการตรวจทั้งหมด</h2></div></div><div class="tbl-wrap"><table><thead><tr><th>การตรวจ</th><th>ผล</th><th>รายละเอียด</th></tr></thead><tbody>${m.checks.map(c => `<tr><td>${esc(c.name)}</td><td>${c.ok ? 'ผ่าน' : '<span class="tag wait">ต้องตรวจสอบ</span>'}</td><td>${esc(c.detail)}</td></tr>`).join('')}</tbody></table></div></section>
@@ -377,9 +514,9 @@
     $('#f-m').onchange = e => { st.ym = e.target.value; render(false); }; $('#f-u').onchange = e => { st.unit = e.target.value; render(false); }; $('#f-p').onclick = () => window.print();
     $('#f-r').onclick = () => { st.unit = ''; st.ym = m.asof.slice(0, 7); render(false); };
     const pg = (PAGES.filter(p => p[0] === st.page)[0] || PAGES[0])[1];
-    $('#ptitle').textContent = pg + (['exec', 'billing'].indexOf(st.page) >= 0 ? ' · ' + thM(st.ym) : '');
-    $('#psub').textContent = 'SAM WATER SUPPLY · ' + (st.page === 'ops' ? 'ข้อมูลการเดินระบบจากไฟล์ OM' : st.page === 'data' ? 'สำหรับผู้ตรวจสอบข้อมูล' : 'ข้อมูลเอกสารบัญชีจาก TRCLOUD');
-    $('#status').innerHTML = `<span class="chip"><span class="dot"></span>Snapshot — ไม่ใช่ข้อมูลสด</span><span class="chip plain">ดึงจาก TRCLOUD ${thT(m.fetched_to)}</span><span class="chip plain">BL ล่าสุด ${thDs(lastBl)}</span><span class="chip plain">วันที่อ้างอิง ${thDs(m.asof)}</span>${S.om ? `<span class="chip plain">ไฟล์ OM ถึง ${TH[M.om(S).last('volume', 'actual', 2026) - 1]} ${String(2569).slice(2)}</span>` : ''}<span class="chip warn">ข้อมูลบางส่วน: ยังไม่มีงบการเงิน สัญญา และคุณภาพน้ำ</span>`;
+    $('#ptitle').textContent = pg + (['exec', 'billing', 'maint'].indexOf(st.page) >= 0 ? ' · ' + thM(st.ym) : '');
+    $('#psub').textContent = 'SAM WATER SUPPLY · ' + (st.page === 'ops' ? 'ปริมาณน้ำจากไฟล์ OM · สารเคมีจาก PO ใน TRCLOUD' : st.page === 'maint' ? 'ใบงานแจ้งซ่อมจากระบบแจ้งซ่อม · ค่าใช้จ่ายจาก PO ใน TRCLOUD' : st.page === 'data' ? 'สำหรับผู้ตรวจสอบข้อมูล' : 'ข้อมูลเอกสารบัญชีจาก TRCLOUD');
+    $('#status').innerHTML = `<span class="chip"><span class="dot"></span>Snapshot — ไม่ใช่ข้อมูลสด</span><span class="chip plain">ดึงจาก TRCLOUD ${thT(m.fetched_to)}</span><span class="chip plain">BL ล่าสุด ${thDs(lastBl)}</span><span class="chip plain">วันที่อ้างอิง ${thDs(m.asof)}</span>${S.om ? `<span class="chip plain">ไฟล์ OM ถึง ${TH[M.om(S).last('volume', 'actual', 2026) - 1]} ${String(2569).slice(2)}</span>` : ''}${S.maint ? `<span class="chip plain">ใบงานแจ้งซ่อมถึง ${thDs(S.maint.source.reported_to)}</span>` : ''}<span class="chip warn">ข้อมูลบางส่วน: ยังไม่มีงบการเงินและคุณภาพน้ำ</span>`;
     $('#tabs').innerHTML = PAGES.map(p => `<a href="#/${p[0]}" ${p[0] === st.page ? 'aria-current="page"' : ''}>${p[1]}</a>`).join('');
     $('#foot').innerHTML = `ใช้ภายในเพื่อการตรวจรับ · ข้อมูลการเงินของบริษัท ห้ามเผยแพร่ · สร้าง snapshot ${thT(m.built_at)} · ไม่มีปุ่มรีเฟรชเพราะระบบอ่านจาก snapshot — อัปเดตข้อมูลตาม README`;
   }
@@ -387,7 +524,7 @@
     document.body.classList.toggle('no-anim', anim === false);
     DR = []; TB = []; try { sessionStorage.setItem('sam-st', JSON.stringify(st)); } catch (e) { /* ไม่มี storage ก็ใช้งานได้ */ }
     header();
-    const fn = { exec: pExec, billing: pBilling, recv: pRecv, pay: pPay, ops: pOps, contract: pContract, data: pData }[st.page] || pExec, main = $('#main');
+    const fn = { exec: pExec, billing: pBilling, recv: pRecv, pay: pPay, ops: pOps, maint: pMaint, data: pData }[st.page] || pExec, main = $('#main');
     try { main.innerHTML = fn(); } catch (e) { console.error(e); main.innerHTML = `<div class="state err">แสดงหน้านี้ไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
     main.querySelectorAll('[data-table]').forEach(el => mountTable(el, TB[+el.dataset.table]));
     document.title = 'SAM Executive Snapshot · ' + (PAGES.filter(p => p[0] === st.page)[0] || PAGES[0])[1];

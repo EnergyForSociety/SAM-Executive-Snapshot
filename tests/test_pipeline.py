@@ -80,3 +80,13 @@ class Contracts(unittest.TestCase):
         self.assertTrue(any('ซ้ำ' in e for e in errors)); self.assertTrue(any('วันเริ่มหลัง' in e for e in errors))
 
 if __name__ == '__main__': unittest.main()
+
+def test_maintenance_parsers():
+    import import_maintenance as im
+    assert im.sla_hours('ด่วนมาก SLA 24 ชั่วโมง') == 24 and im.sla_hours('ด่วน SLA 3 วัน') == 72 and im.sla_hours('ไม่ด่วน (Not Urgent)') is None
+    assert im.site_of('YS-A-F123', '')[0] == 'YS' and im.site_of('SAMMC6505010', 'ยางไดอะแฟม ประจำโครงการบ่อทอง อาคาร P2')[0] == 'BT-P2'
+    assert im.site_of('SAMMC1', 'ไม่ระบุโครงการ')[0] is None
+
+def test_cost_group():
+    assert B.cost_group('RM-1010001', 'RM') == 'chem' and B.cost_group('5131000', '') == 'maint' and B.cost_group('SU-2010061', 'SU') == 'maint'
+    assert B.cost_group('1701004', '') == 'capex' and B.cost_group('5308002', '') == 'facility' and B.cost_group('5306000', '') == 'other'
