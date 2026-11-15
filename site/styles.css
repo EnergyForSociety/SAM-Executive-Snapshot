@@ -54,6 +54,8 @@ button, select, input { font: inherit; color: inherit; }
 .pagehead h1 { font-size: 26px; font-weight: 600; color: var(--navy); line-height: 1.25; }
 .pagehead p { color: var(--muted); font-size: 14px; }
 /* แถบที่มาของข้อมูล — อยู่ท้ายทุกหน้า เหนือบรรทัดท้ายเว็บ */
+/* คำอธิบาย/ข้อจำกัดของหน้า — ย้ายไปท้ายหน้าด้วย order เพื่อให้การ์ด KPI ขึ้นก่อนโดยไม่ต้องเลื่อนจอ */
+.main > .note-top { order: 9; }
 .statusbar { max-width: 1320px; margin: 18px auto 0; padding: 14px 20px 0; border-top: 1px solid var(--line); }
 .status { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; justify-content: flex-start; }
 .filterbar { max-width: 1320px; margin: 16px auto 0; padding: 0 20px; }
