@@ -1,6 +1,6 @@
 """นำเข้าไฟล์ Excel ใบงานแจ้งซ่อม (ระบบแจ้งซ่อม) → data/maintenance.json พร้อมที่มา (ไฟล์ ชีท เวลานำเข้า sha256)
 ใช้: python3 scripts/import_maintenance.py om/<ไฟล์>.xlsx
-- ไม่เก็บชื่อบุคคล (ผู้แจ้ง/ผู้รับผิดชอบ) ลงชุดข้อมูล
+- เก็บชื่อผู้แจ้งซ่อมและผู้รับผิดชอบตามไฟล์ต้นฉบับ (ข้อมูลส่วนบุคคล — อยู่ในชุดข้อมูลที่เข้ารหัสและเปิดได้เฉพาะผู้มีสิทธิ์)
 - ช่องว่าง = ไม่มีข้อมูล (ไม่แปลงเป็นศูนย์)
 - พื้นที่ (site) อ่านจากรหัส QR ที่ขึ้นต้นด้วยรหัสพื้นที่ หรือชื่อโครงการในคำอธิบายอาการเสีย — อ่านไม่ได้ = ว่าง
 - SLA อ่านจากข้อความระดับความด่วน เช่น "ด่วน SLA 3 วัน" · ระดับที่ไม่ระบุ SLA = ว่าง (ไม่นับในการวัด SLA)"""
@@ -8,7 +8,7 @@ import sys, os, json, hashlib, datetime, re
 import openpyxl
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
-COLS = {'wo': 'เลขที่ใบงาน', 'status': 'สถานะ', 'reported': 'วันที่แจ้งซ่อม', 'type': 'ประเภทใบงาน', 'machine_stop': 'สถานะเครื่องจักรหยุด', 'line': 'สถานะไลน์ผลิต',
+COLS = {'wo': 'เลขที่ใบงาน', 'status': 'สถานะ', 'reporter': 'ผู้แจ้งซ่อม', 'owner': 'ผู้รับผิดชอบ', 'due': 'วันที่คาดว่าจะเสร็จ', 'reported': 'วันที่แจ้งซ่อม', 'type': 'ประเภทใบงาน', 'machine_stop': 'สถานะเครื่องจักรหยุด', 'line': 'สถานะไลน์ผลิต',
         'urgency': 'ระดับความด่วน', 'safety': 'ความปลอดภัย', 'mdept': 'แผนกของเครื่องจักร', 'qr': 'QR Code', 'machine': 'ชื่อเครื่องจักร', 'mtype': 'ประเภทเครื่องจักร',
         'symptom': 'อาการเสีย', 'fcode': 'รหัสอาการเสีย', 'fdesc': 'รายละเอียดรหัสอาการเสีย', 'rcode': 'รหัสอาการซ่อม', 'rdesc': 'รายละเอียดรหัสอาการซ่อม',
         'cause': 'สาเหตุอาการเสีย', 'fix': 'วิธีการแก้ไข', 'assigned': 'วันเวลาที่มอบงาน', 'min_assign': 'ระยะเวลาตั้งแต่แจ้งซ่อมถึงมอบหมาย (นาที)',
@@ -65,6 +65,7 @@ def parse(path):
                     'qr': txt(g('qr')), 'machine': txt(g('machine'), 120), 'mtype': txt(g('mtype')) or '(ไม่ระบุ)', 'symptom': txt(g('symptom'), 400),
                     'fcode': txt(g('fcode')).rstrip(','), 'fdesc': txt(g('fdesc')), 'rcode': txt(g('rcode')).rstrip(','), 'rdesc': txt(g('rdesc')),
                     'cause': txt(g('cause'), 300), 'fix': txt(g('fix'), 300), 'assigned': iso(g('assigned')),
+                    'reporter': txt(g('reporter'), 80), 'owner': txt(g('owner'), 80), 'due': iso(g('due')),
                     'min_assign': num(g('min_assign')), 'min_done': num(g('min_done')) if st in DONE else None, 'min_work': num(g('min_work')) if st in DONE else None,
                     'done_at': iso(g('done_at')) if st in DONE else None, 'score': num(g('score')), 'site': site, 'site_from': how})
     return out, miss, issues, ws.title

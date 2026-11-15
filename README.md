@@ -58,7 +58,7 @@ scripts/build_snapshot.py    3) Normalization + ความสัมพัน�
 web/metrics.js               4) Metric calculations (ไม่มี DOM · ทดสอบด้วย node)
 web/app.js, index.html, styles.css   5) Dashboard UI
 scripts/import_om.py         นำเข้า Excel ของ OM → data/om.json (+ประวัติ revision)
-scripts/import_maintenance.py นำเข้า Excel ใบงานแจ้งซ่อม → data/maintenance.json (ไม่เก็บชื่อบุคคล)
+scripts/import_maintenance.py นำเข้า Excel ใบงานแจ้งซ่อม → data/maintenance.json (มีชื่อผู้แจ้งซ่อมและผู้รับผิดชอบตามไฟล์ต้นฉบับ)
 scripts/import_contracts.py  นำเข้าทะเบียนสัญญา (CSV) → data/contracts.json
 config/area_mapping.json     department ↔ รหัสพื้นที่ OM ↔ เฟส
 config/settings.json         เกณฑ์เตือนภายใน (แยกจากกำหนดตามสัญญา)
@@ -100,6 +100,7 @@ node tests/gate_test.js site <กุญแจ>          # จำลอง Micros
 ## ความปลอดภัย
 
 - ใช้เครื่องมือ TRCLOUD แบบอ่านอย่างเดียว เฉพาะบริษัท SAM · ไม่มี credential ใน source code, frontend หรือ log
+- ชุดข้อมูลใบงานแจ้งซ่อมมีชื่อผู้แจ้งซ่อมและผู้รับผิดชอบ (ข้อมูลส่วนบุคคล) — อยู่เฉพาะใน `data/` และในไฟล์ `site/data.enc.js` ที่เข้ารหัส เปิดได้หลังเข้าสู่ระบบและอยู่ในกลุ่มที่ได้รับสิทธิ์เท่านั้น
 - `raw/`, `data/`, `om/` เป็นข้อมูลการเงินจริง — เก็บในโฟลเดอร์โครงการนี้เท่านั้น ห้ามขึ้น repository สาธารณะ (ดู `.gitignore`)
 - เว็บจริงเปิดได้หลังเข้าสู่ระบบ Microsoft 365 + อยู่ในกลุ่ม `sam_dashboard_viewers` + อ่านไฟล์กุญแจใน SharePoint ได้ (แบบเดียวกับ STAR) · ข้อมูลบน GitHub เข้ารหัสทั้งหมด
 - repo เป็นสาธารณะ (เพื่อใช้ GitHub Pages) — `.gitignore` กันข้อมูลดิบ เอกสารที่มีตัวเลขจริง และ mapping พื้นที่ ไม่ให้ขึ้น Git
