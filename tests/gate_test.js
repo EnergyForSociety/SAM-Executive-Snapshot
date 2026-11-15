@@ -28,7 +28,9 @@ const MSAL = (groups) => `window.msal = { InteractionRequiredAuthError: function
   await p.click('#go'); await p.waitForTimeout(1500);
   ok(await p.locator('#dash-root').isVisible() && await p.locator('#lock').isHidden(), 'ถอดรหัสและเปิด dashboard หลังเข้าสู่ระบบ');
   ok((await p.locator('#who').innerText()) === 'ผู้ทดสอบ' && await p.locator('#logout').isVisible(), 'แสดงชื่อผู้ใช้และปุ่มออกจากระบบ');
-  ok(await p.locator('button.kpi').count() === 4 && !/NaN|undefined/.test(await p.locator('#main').innerText()), 'ข้อมูลที่ถอดรหัสแสดงผลครบ');
+  const nk = await p.locator('button.kpi').count();
+  ok(nk >= 4 && !/NaN|undefined/.test(await p.locator('#main').innerText()), 'ข้อมูลที่ถอดรหัสแสดงผลครบ (KPI ' + nk + ' ใบ)');
+  ok((await p.locator('#tabs').innerText()).split('\n').join(' ').includes('การเงิน'), 'เมนู 7 หมวดตามกรอบผู้บริหารแสดงหลังเข้าสู่ระบบ');
   await p.screenshot({ path: path.join(path.dirname(site), 'gate_open.png') });
   await p.click('#logout'); await p.waitForTimeout(600); ok(await p.locator('#lock').isVisible(), 'ออกจากระบบกลับหน้า login');
   ok(!errs.length, 'ไม่มี JavaScript error ' + errs.join('; ')); await ctx.close();

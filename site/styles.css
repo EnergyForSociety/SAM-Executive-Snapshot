@@ -37,6 +37,10 @@ button, select, input { font: inherit; color: inherit; }
 .seg { display: inline-flex; padding: 3px; border: 1px solid rgba(141, 178, 222, .55); border-radius: 999px; }
 .seg button { min-height: 34px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; color: #DCE8F7; cursor: pointer; font-size: 14px; }
 .seg button[aria-pressed="true"] { background: #8DB2DE; color: #10294A; font-weight: 600; }
+/* แท็บหน้าย่อยในพื้นที่เนื้อหา (พื้นสว่าง) — ใช้โครงเดียวกับ .seg ของแถบด้านบน */
+.seg.subseg { border-color: var(--line); background: var(--card); align-self: flex-start; flex-wrap: wrap; max-width: 100%; }
+.seg.subseg button { color: var(--muted); }
+.seg.subseg button[aria-pressed="true"] { background: var(--navy); color: #fff; font-weight: 600; }
 .who { font-size: 13.5px; color: #DCE8F7; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn-out { min-height: 40px; padding: 0 16px; border: 1px solid #8DB2DE; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; font-size: 14px; }
 .btn-out:hover { background: rgba(141, 178, 222, .15); }

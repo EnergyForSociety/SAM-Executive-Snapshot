@@ -256,9 +256,121 @@ def build():
     check('บรรทัด PO ทุกบรรทัด (ไม่รวมยกเลิก) ถูกจัดกลุ่มต้นทุน', len(po_lines) == total_lines and all(l['grp'] for l in po_lines), f'{len(po_lines)} บรรทัด · สารเคมี {sum(1 for l in po_lines if l["grp"] == "chem")} · ซ่อมบำรุง {sum(1 for l in po_lines if l["grp"] == "maint")} · สินทรัพย์ {sum(1 for l in po_lines if l["grp"] == "capex")}')
     check('ยอด PO รายบรรทัดรวมเท่ากับยอดรายเอกสาร (ไม่รวมยกเลิก)', sum(l['amt'] for l in po_lines) == sum(x['amt'] for x in pos if not is_cancel(x['status'])), 'ตรวจด้วยหน่วยสตางค์')
 
+    # ---------- Management P&L จาก Ledger ----------
+    led_rows, c = get('get_ledger')
+    pl = None
+    if led_rows:
+        plcfg = json.load(open(os.path.join(ROOT, 'config', 'pl_mapping.json'), encoding='utf-8'))
+        # บรรทัดเดียวกันอาจมาจากหลายหน้า (pagination) — ตัดซ้ำด้วยคีย์ที่ระบุบรรทัดบัญชีได้จริง
+        led, dup = dedupe(led_rows, lambda r: (r['transaction_id'], r['acc_code'], r['costcenter'], r['dr'], r['cr'], r['acc_note'], r['date']))
+        # ครบเมื่อ "หน้าสุดท้ายของแต่ละบัญชี" ได้ไม่เต็มเพดาน (หน้าแรกของบัญชีที่มีรายการมากย่อมเต็ม 100 เป็นปกติ)
+        pages = collections.defaultdict(list)
+        for x in c:
+            if x['ok']: pages[x['params']['acc_code']].append((int(x['params'].get('start') or 0), x['rows'] or 0))
+        full = all(max(p)[1] < 100 for p in pages.values())
+        dataset('ledger', 'สมุดรายวันแยกประเภท (get_ledger) บัญชีรายได้/ต้นทุน/ค่าใช้จ่าย ปี 2569', c, len(led),
+                len({r['transaction_id'] for r in led}), max((r['date'] for r in led), default=None),
+                note='ดึงทุกบัญชีใน COA หมวด 4/5/6 แล้วเก็บเฉพาะบัญชีที่มีรายการ · ดึงครบทุกหน้าด้วยพารามิเตอร์ start')
+        check('Ledger ดึงครบทุกหน้า (ทุกคำขอได้ไม่เต็มเพดาน 100 แถว)', full, f'{len(c)} คำขอ · {len(led)} บรรทัด', critical=True)
+        check('ไม่มีบรรทัด Ledger ซ้ำจากการแบ่งหน้า', True, f'ตัดซ้ำ {dup} บรรทัด จาก {len(led_rows)} แถวที่ดึงมา')
+
+        def head_of(code):
+            """หาหัวบัญชีที่ยาวที่สุดที่ตรงกับรหัสบัญชี — ให้ 5301..5312 ชนะ 530"""
+            best = None
+            for g in plcfg['groups']:
+                for h in g['heads']:
+                    if code.startswith(h) and (best is None or len(h) > len(best[1])): best = (g, h)
+            return best[0] if best else None
+
+        SIGN = {'revenue': -1}      # รายได้: เครดิตเป็นบวก · อื่น ๆ: เดบิตเป็นบวก
+        accs, months, excluded = {}, set(), {}
+        gm = collections.defaultdict(lambda: collections.defaultdict(int))
+        gm_ex = collections.defaultdict(lambda: collections.defaultdict(int))     # ไม่รวมบรรทัดรายการปรับสัญญาเช่า
+        mstat = collections.defaultdict(lambda: {'rows': 0, 'adjust_rows': 0, 'adjust_abs': 0, 'estimate_rows': 0})
+        cc = collections.defaultdict(lambda: collections.defaultdict(int))
+        cc_missing = collections.defaultdict(int)
+        kw_adj, kw_est = plcfg['adjust_keywords'], plcfg['estimate_keywords']
+        kw_lease = [k.lower() for k in plcfg['lease_keywords']]
+        lease_docs, lease_abs = set(), 0
+        for r in led:
+            code = (r['acc_code'] or '').strip()
+            if not re.fullmatch(r'[456]\d{6}', code):     # กันบัญชีงบดุลหลุดเข้า P&L
+                excluded[code] = excluded.get(code, 0) + 1; continue
+            g = head_of(code)
+            if g is None:
+                excluded[code] = excluded.get(code, 0) + 1; continue
+            mo = r['date'][:7]; months.add(mo)
+            amt = st(r['dr']) - st(r['cr'])
+            amt *= SIGN.get(g['kind'], 1)
+            a = accs.setdefault(code, {'code': code, 'name': clean(r['acc_th']) or clean(r['acc_en']), 'group': g['key'], 'kind': g['kind'], 'by_month': {}, 'total': 0, 'rows': 0})
+            a['by_month'][mo] = a['by_month'].get(mo, 0) + amt; a['total'] += amt; a['rows'] += 1
+            gm[g['key']][mo] += amt
+            txt = (clean(r['note1']) + ' ' + clean(r['acc_note'])).lower()
+            s = mstat[mo]; s['rows'] += 1
+            if any(k.lower() in txt for k in kw_adj): s['adjust_rows'] += 1; s['adjust_abs'] += abs(amt)
+            if any(k.lower() in txt for k in kw_est): s['estimate_rows'] += 1
+            if any(k in txt for k in kw_lease):
+                s['lease_rows'] = s.get('lease_rows', 0) + 1
+                lease_docs.add(r['ref_no']); lease_abs += abs(amt)
+            else:
+                gm_ex[g['key']][mo] += amt
+            if g['kind'] in ('cost', 'revenue'):
+                k = (r['costcenter'] or '').strip()
+                if k: cc[g['key']][k] += amt
+                else: cc_missing[g['key']] += 1
+        months = sorted(months)
+        gtot = {g['key']: {'label': g['label'], 'kind': g['kind'], 'management': g.get('management', True), 'caveat': g.get('caveat'),
+                           'by_month': {m: gm[g['key']].get(m, 0) for m in months}, 'total': sum(gm[g['key']].values()),
+                           'by_month_ex_lease': {m: gm_ex[g['key']].get(m, 0) for m in months}, 'total_ex_lease': sum(gm_ex[g['key']].values())} for g in plcfg['groups']}
+
+        def line_values():
+            vals, out = {}, []
+            for ln in plcfg['lines']:
+                if 'add' in ln:
+                    v = {m: sum(gtot[k]['by_month'].get(m, 0) for k in ln['add']) for m in months}
+                else:
+                    expr = ln['formula']
+                    v = {}
+                    for m in months:
+                        e = expr
+                        for k in sorted(vals, key=len, reverse=True): e = e.replace(k, str(vals[k].get(m, 0)))
+                        v[m] = eval(e, {'__builtins__': {}})      # มีแต่ชื่อบรรทัดจาก config และเครื่องหมาย + -
+                vals[ln['key']] = v
+                out.append({'key': ln['key'], 'label': ln['label'], 'by_month': v, 'total': sum(v.values()), 'derived': 'formula' in ln})
+            return out, vals
+
+        lines_pl, vals = line_values()
+        # ตรวจสมการงบ: กำไรขั้นต้น + รายได้อื่น - ค่าใช้จ่าย = EBITDA ฯลฯ
+        eq = all(vals['gp'][m] == vals['rev_service'][m] - vals['cos'][m] and
+                 vals['ebitda'][m] == vals['gp'][m] + vals['rev_other'][m] - vals['opex'][m] and
+                 vals['ebt'][m] == vals['ebitda'][m] - vals['dep_admin'][m] - vals['finance'][m] and
+                 vals['np'][m] == vals['ebt'][m] - vals['tax'][m] for m in months)
+        check('สมการ Management P&L ถูกต้องทุกเดือน', eq, f'{len(months)} เดือน ({months[0]} – {months[-1]})', critical=True)
+        sum_acc = {m: sum(a['by_month'].get(m, 0) for a in accs.values()) for m in months}
+        sum_grp = {m: sum(gtot[k]['by_month'][m] for k in gtot) for m in months}
+        check('ยอดรวมรายบัญชีเท่ากับยอดรวมรายกลุ่ม', sum_acc == sum_grp, 'ตรวจด้วยหน่วยสตางค์ทุกเดือน', critical=True)
+        check('ไม่มีบัญชีงบดุลหรือบัญชีนอกผังในงบ', not excluded, 'ไม่พบ' if not excluded else 'ไม่รวม: ' + ', '.join(f'{k} ({v} บรรทัด)' for k, v in sorted(excluded.items())))
+        # ค่าใช้จ่ายดำเนินงานที่ใช้วัดผลได้ (กลุ่มที่ไม่ถูกรายการปรับสัญญาเช่าครอบ และไม่ใช่ภาษี)
+        usable = [k for k, g in gtot.items() if g['management'] and g['kind'] in ('cost', 'expense')]
+        cost_usable = {m: sum(gtot[k]['by_month_ex_lease'][m] for k in usable) for m in months}
+        check('แยกกลุ่มที่ใช้วัดผลได้ออกจากกลุ่มที่ถูกรายการปรับสัญญาเช่าครอบ', bool(usable) and any(not g['management'] for g in gtot.values()),
+              'ใช้วัดผลได้: ' + ', '.join(gtot[k]['label'] for k in usable) + ' · ติดคำเตือน: ' + ', '.join(g['label'] for g in gtot.values() if not g['management']))
+        pl = {'months': months, 'accounts': sorted(accs.values(), key=lambda a: a['code']), 'groups': gtot, 'lines': lines_pl,
+              'headline': plcfg['headline_profit'], 'profit_usable': plcfg['profit_usable'], 'profit_blocked_reason': plcfg['profit_blocked_reason'],
+              'cost_usable': cost_usable, 'cost_usable_groups': usable, 'excluded': excluded,
+              'lease_adjust': {'docs': sorted(lease_docs), 'rows': sum(mstat[m].get('lease_rows', 0) for m in months), 'abs': lease_abs},
+              'month_status': {m: dict(mstat[m], preliminary=True) for m in months},
+              'by_costcenter': {k: dict(v) for k, v in cc.items()}, 'costcenter_missing': dict(cc_missing),
+              'maint_accounts': plcfg['maintenance_accounts'],
+              'note': 'ยังไม่มี API สถานะปิดบัญชี — ทุกเดือนถือเป็นผลเบื้องต้น · บัญชีรายได้บางบัญชีมีรายการปรับเป็นวิธีลูกหนี้สัญญาเช่า (TFRS) และกลับรายการรายไตรมาส ยอดสะสมรายบัญชีจึงอ่านแยกบัญชีไม่ได้ ต้องดูทั้งกลุ่ม'}
+        q = [m for m in months if mstat[m]['adjust_rows']]
+        check('ติดธงเดือนที่มีรายการปรับ/กลับรายการ', bool(q), 'เดือนที่มีรายการปรับ: ' + (', '.join(q) if q else 'ไม่มี'))
+
     # ---------- ชุดที่ยังไม่มี/ติดสิทธิ์ ----------
     limits = [
-        {'topic': 'งบกำไรขาดทุน / งบดุล', 'detail': 'API ตอบ 402 Payment Required (ต้องใช้แพ็กเกจ Datawarehouse หรือ ERP) — ตรวจเมื่อ 14 พ.ย. 2569 จึงไม่แสดงกำไร'},
+        {'topic': 'งบกำไรขาดทุน / งบดุล / งบทดลอง (API สำเร็จรูป)', 'detail': 'API ตอบ 402 Payment Required (ต้องใช้แพ็กเกจ Datawarehouse หรือ ERP) — ตรวจเมื่อ 15 พ.ย. 2569 · จึงประกอบ Management P&L เองจาก Ledger (get_ledger) ซึ่งเป็น API ที่ใช้ได้'},
+        {'topic': 'สถานะปิดบัญชีรายเดือน', 'detail': 'ไม่มี API บอกว่าเดือนใดปิดแล้ว — ทุกเดือนในงบจึงกำกับว่า "ผลเบื้องต้น (ยังไม่ปิดบัญชี)"'},
+        {'topic': 'รายการปรับวิธีลูกหนี้สัญญาเช่า (TFRS)', 'detail': 'บัญชี 4101000 / 4211000 / 4211001 / 5151000 / 5151002 มี JV ปรับและกลับรายการรายไตรมาส ทำให้ยอดสะสมของบัญชีเดี่ยวติดลบ/ผิดด้าน — งบจึงแสดงเป็นกลุ่มและติดธงเดือนที่มีรายการปรับ ไม่แยกอ่านรายบัญชี'},
         {'topic': 'ใบเสร็จรับเงิน RV', 'detail': 'ค้น RV ในช่วงที่ตรวจไม่พบเอกสาร ขณะที่ IV มีสถานะ Cash — ใช้วันที่ IV (ประเภท TTB(RV)-BL) เป็นวันที่รับเงินตามเอกสาร รอฝ่ายบัญชียืนยัน'},
         {'topic': 'ยอดเรียกเก็บปี 2568 ใน TRCLOUD', 'detail': 'ปี 2568 มีเฉพาะเอกสารยกยอดลูกหนี้ (ไม่มี BL รายบรรทัด) — การเทียบปีก่อนจึงใช้ข้อมูลรายได้/ปริมาณจากไฟล์ OM'},
         {'topic': 'รายงานซื้อ AP (P5) / ใบสำคัญจ่าย PV / GL / ธนาคาร', 'detail': 'ยังไม่ได้นำเข้าในรุ่นนี้ — เงินจ่ายจริงและยอดเงินสดจึงยังไม่แสดง'},
@@ -282,7 +394,7 @@ def build():
                      'fetched_from': to_bkk(fetched[0]).isoformat(timespec='seconds'), 'fetched_to': to_bkk(fetched[-1]).isoformat(timespec='seconds'),
                      'period_from': '2026-01-01', 'period_to': asof, 'source': 'TRCLOUD MCP (บริษัท SAM) — อ่านอย่างเดียว ผ่าน session ของผู้ช่วย', 'built_at': datetime.datetime.now(BKK).isoformat(timespec='seconds'),
                      'datasets': datasets, 'checks': checks, 'limits': limits, 'settings': json.load(open(os.path.join(ROOT, 'config', 'settings.json'), encoding='utf-8')), 'money_unit': 'satang'},
-            'areas': areas, 'bl_lines': lines, 'bl_docs': docs, 'iv': ivs, 'recv': recv, 'pay': pay, 'po': pos, 'po_lines': po_lines, 'cost_groups': COST_GROUPS, 'coa': {k: v for k, v in coa.items() if any(l['acc'] == k for l in po_lines)}, 'om': om, 'maint': maint, 'contracts': contracts}
+            'areas': areas, 'bl_lines': lines, 'bl_docs': docs, 'iv': ivs, 'recv': recv, 'pay': pay, 'po': pos, 'po_lines': po_lines, 'pl': pl, 'cost_groups': COST_GROUPS, 'coa': {k: v for k, v in coa.items() if any(l['acc'] == k for l in po_lines)}, 'om': om, 'maint': maint, 'contracts': contracts}
     json.dump(snap, open(os.path.join(DATA, 'snapshot.json'), 'w', encoding='utf-8'), ensure_ascii=False)
     return snap
 

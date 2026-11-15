@@ -3,9 +3,18 @@
 (function () {
   'use strict';
   const M = window.SAMM, $ = (s, r) => (r || document).querySelector(s);
-  let S = null, st = { page: 'exec', ym: null, unit: '' }, DR = [], TB = [];
+  let S = null, st = { page: 'exec', ym: null, unit: '', sub: {} }, DR = [], TB = [];
   const TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-  const PAGES = [['exec', 'Executive Snapshot'], ['billing', 'ยอดเรียกเก็บและพื้นที่'], ['recv', 'ลูกหนี้และการรับชำระ'], ['pay', 'เจ้าหนี้และภาระจัดซื้อ'], ['ops', 'การผลิตและสารเคมี'], ['maint', 'Maintenance Snapshot'], ['data', 'สถานะข้อมูล']];
+  /* โครงเมนูตามกรอบผู้บริหาร: Executive · การขาย · การเงิน · โครงการ · กลยุทธ์ · ปฏิบัติการ · สถานะข้อมูล
+     หน้าย่อย (sub) คือหน้าเดิมที่ย้ายเข้ามาเป็นระดับรายละเอียด — สูตร ตัวกรอง และการส่งออก CSV เหมือนเดิมทุกจุด */
+  const PAGES = [['exec', 'Executive'], ['sales', 'การขาย'], ['fin', 'การเงิน'], ['proj', 'โครงการ'], ['strat', 'กลยุทธ์'], ['ops', 'ปฏิบัติการ'], ['data', 'สถานะข้อมูล']];
+  const SUBS = {
+    sales: [['billing', 'ยอดเรียกเก็บและพื้นที่'], ['crm', 'ลูกค้าใหม่และโอกาสขาย']],
+    fin: [['pl', 'งบบริหาร (P&L) และต้นทุน'], ['recv', 'ลูกหนี้และการรับชำระ'], ['pay', 'เจ้าหนี้และภาระจัดซื้อ']],
+    ops: [['prod', 'การผลิตและสารเคมี'], ['maint', 'Maintenance Snapshot']]
+  };
+  const subOf = p => { const l = SUBS[p]; if (!l) return null; const v = st.sub[p]; return l.some(x => x[0] === v) ? v : l[0][0]; };
+  const segTabs = p => { const l = SUBS[p], cur = subOf(p); return `<div class="seg subseg no-print" role="tablist" aria-label="หน้าย่อย">${l.map(x => `<button role="tab" aria-pressed="${x[0] === cur}" ${drill(() => { st.sub[p] = x[0]; render(false); window.scrollTo(0, 0); })}>${esc(x[1])}</button>`).join('')}</div>`; };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const nf = (n, d) => Number(n).toLocaleString('en-US', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
   const B = s => nf(s / 100, 2);                                             // สตางค์ → บาท เต็มจำนวน
@@ -180,6 +189,7 @@
     return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title || '')}"><text x="${L - 40}" y="13" font-size="11" style="fill:var(--muted)">ล้านบาท</text>${g}</svg><div class="legend">${keys.map(k => `<span><i style="background:${k.c}"></i>${esc(k.label)}</span>`).join('')}</div>`;
   }
   const goPage = p => () => { location.hash = '#/' + p; };
+  const goSub = (p, s) => () => { st.sub[p] = s; location.hash === '#/' + p ? render(true) : (location.hash = '#/' + p); };
   /* ราคาและปริมาณตามเอกสาร BL ล่าสุดของแต่ละหมวด — คำนวณจากข้อมูล ไม่ฝังตัวเลขในโค้ด */
   function facts() {
     const last = cat => S.bl_lines.filter(l => l.cat === cat).sort((a, b) => a.date < b.date ? 1 : -1)[0] || null;
@@ -276,6 +286,51 @@
   }
   const insightHtml = i => `<article class="insight ${i.warn ? 'warn' : ''}"><h3>${esc(i.title)}</h3><dl><dt>ข้อค้นพบ</dt><dd>${esc(i.find)}</dd><dt>ตัวเลขและช่วงเวลา</dt><dd>${esc(i.nums)}</dd><dt>ผลต่อการบริหาร</dt><dd>${esc(i.impact)}</dd><dt>สิ่งที่ควรดำเนินการ</dt><dd>${esc(i.act)}</dd><dt>ผู้รับผิดชอบ/กำหนด</dt><dd>${NA('ยังไม่มีข้อมูลผู้รับผิดชอบและกำหนดเวลา')}</dd>${i.caveat ? `<dt>ข้อจำกัด</dt><dd>${esc(i.caveat)}</dd>` : ''}<dt>หลักฐาน</dt><dd><button class="link" ${drill(i.ev[1])}>${esc(i.ev[0])}</button></dd></dl></article>`;
 
+  /* ---------- งบบริหารจาก Ledger: ตัวช่วยร่วม ----------
+     S.pl มาจาก get_ledger ตามการจัดกลุ่มใน config/pl_mapping.json (หน่วยสตางค์)
+     ยอดรายเดือนของกลุ่มที่ management=false ถูกรายการปรับตามวิธีลูกหนี้สัญญาเช่า (TFRS) ครอบ
+     จึงใช้ by_month_ex_lease (ตัดบรรทัดรายการปรับออก) เป็นตัวเลขที่ใช้วัดผลได้ */
+  const PL = () => S.pl || null;
+  const plMonths = () => { const p = PL(); return p ? p.months : []; };
+  const plLine = (key, ym) => { const p = PL(); if (!p) return null; const l = p.lines.filter(x => x.key === key)[0]; return l ? (ym ? (l.by_month[ym] == null ? null : l.by_month[ym]) : l.total) : null; };
+  const plCostUsable = ym => { const p = PL(); if (!p) return null; return ym ? (p.cost_usable[ym] == null ? null : p.cost_usable[ym]) : plMonths().reduce((a, m) => a + (p.cost_usable[m] || 0), 0); };
+  const plPartial = ym => ym === S.meta.asof.slice(0, 7);
+  const plAccTable = (title, filter, sub) => { const p = PL(), rows = p.accounts.filter(filter), ms = p.months;
+    return { title: title, sub: sub || 'จาก get_ledger · ยอดตามเครื่องหมายธรรมชาติของหมวดบัญชี (รายได้ = เครดิต − เดบิต · ต้นทุน/ค่าใช้จ่าย = เดบิต − เครดิต) · ผลเบื้องต้น ยังไม่ปิดบัญชี', file: 'SAM_pl_accounts', sort: 'total', dir: -1, rows: rows,
+      total: a => { const t = { total: M.sum(a, r => r.total) }; ms.forEach(m => t['m_' + m] = M.sum(a, r => r.by_month[m] || 0)); return t; },
+      minw: 1180,
+      cols: [{ k: 'code', label: 'รหัสบัญชี' }, { k: 'name', label: 'ชื่อบัญชี' }, { k: 'group', label: 'กลุ่มในงบ', fmt: r => esc((p.groups[r.group] || {}).label || r.group), csv: r => (p.groups[r.group] || {}).label || r.group }]
+        .concat(ms.map(m => ({ k: 'm_' + m, label: TH[+m.slice(5) - 1], r: 1, fmt: r => r.by_month[m] ? B(r.by_month[m]) : '–', sortv: r => r.by_month[m] || 0, csv: r => (r.by_month[m] || 0) / 100 })))
+        .concat([{ k: 'total', label: 'รวม', r: 1, money: 1, sortv: r => r.total }, { k: 'rows', label: 'บรรทัด', r: 1 }]) }; };
+
+  /* การ์ดต้นทุน/ค่าใช้จ่ายดำเนินงานจาก Ledger — แสดงเฉพาะเมื่อมีตัวเลขจริงของเดือนที่เลือก */
+  function plCard(cm) {
+    const p = PL(), ym = st.ym; if (!p) return '';
+    const v = plCostUsable(ym); if (v === null) return '';
+    const pm = cm.prev ? cm.pfrom.slice(0, 7) : null, pvv = pm ? plCostUsable(pm) : null;
+    const kv = MBv(v), ytd = plCostUsable(), st2 = p.month_status[ym] || {};
+    return `<button class="card accent kpi" ${drill(goSub('fin', 'pl'))}><span class="lab">การเงิน · ต้นทุนและค่าใช้จ่ายดำเนินงานตามบัญชี · ${thM(ym)}</span>
+      <span class="val num">${kv[0]} <small>${kv[1]}</small></span>
+      ${plPartial(ym) ? `<span class="delta na">ยังไม่ครบเดือน จึงไม่เทียบกับเดือนก่อน</span>` : delta(pvv ? M.pct(v, pvv) : null, 'เทียบ ' + (pm ? thM(pm) : ''))}
+      <span class="full num">สะสม ${TH[+plMonths()[0].slice(5) - 1]}–${TH[+plMonths()[plMonths().length - 1].slice(5) - 1]} ${MB(ytd)}${plPartial(ym) ? partialNote(ym) : ''}</span>
+      <span class="full">ทั้งบริษัท ไม่แยกพื้นที่ · ตัดบรรทัดรายการปรับสัญญาเช่าออกแล้ว${st2.adjust_rows ? ' · เดือนนี้มีรายการปรับ ' + nf(st2.adjust_rows) + ' บรรทัด' : ''} · ผลเบื้องต้น ยังไม่ปิดบัญชี</span>
+      <span class="more">ดูงบบริหารและต้นทุน →</span></button>`;
+  }
+
+  /* แถบ "KPI ที่ยังแสดงไม่ได้" — บอกเหตุผลจริงแทนการแสดงการ์ดศูนย์ */
+  function execGaps() {
+    const p = PL(), g = [];
+    g.push({ t: 'กำไร', why: p ? p.profit_blocked_reason : 'ยังไม่มีข้อมูลสมุดบัญชีใน snapshot', go: p ? goSub('fin', 'pl') : goPage('data'), lab: 'ดูงบบริหาร' });
+    g.push({ t: 'เงินสดและกระแสเงินสด', why: 'API งบกระแสเงินสด/งบดุลต้องใช้แพ็กเกจ Datawarehouse — ยอดในทะเบียนธนาคารไม่ใช่เงินสดที่ตรวจยืนยันได้ จึงไม่นำมาแสดง · รอ statement ธนาคารจากฝ่ายการเงิน', go: goPage('data'), lab: 'ดูข้อจำกัด' });
+    g.push({ t: 'ลูกค้าใหม่และโอกาสขาย (Pipeline)', why: 'ไม่มีข้อมูล lead/quotation ของ SAM ใน TRCLOUD — ยังไม่มีแหล่งข้อมูล CRM/BD', go: goSub('sales', 'crm'), lab: 'ดูหน้า CRM/BD' });
+    g.push({ t: 'ต้นทุนต่อหน่วยน้ำ (บาท/ลบ.ม.)', why: 'มีเฉพาะต้นทุนสารเคมีตามมูลค่า PO ÷ ปริมาณน้ำตามไฟล์ OM — ยังไม่มีการเบิกใช้จริงและต้นทุนรวมรายพื้นที่ จึงยังไม่ใช่ต้นทุนต่อหน่วยที่สมบูรณ์', go: goSub('ops', 'prod'), lab: 'ดูการผลิตและสารเคมี' });
+    g.push({ t: 'โครงการและ Resource Utilization', why: 'ไม่มีข้อมูลโครงการและชั่วโมงทำงานจริงในแหล่งที่เข้าถึงได้', go: goPage('proj'), lab: 'ดูหน้าโครงการ' });
+    return `<section class="card"><div class="head"><div><h2>KPI ที่ยังแสดงไม่ได้ และเหตุผล</h2><p class="sub">ตามกรอบผู้บริหาร KPI เหล่านี้ต้องมีข้อมูลที่ตรวจยืนยันได้ก่อน — ไม่แสดงเป็นศูนย์หรือค่าประมาณ</p></div></div>
+      <div class="tbl-wrap"><table><thead><tr><th>KPI</th><th>เหตุผลที่ยังแสดงไม่ได้</th><th>ดูต่อ</th></tr></thead><tbody>
+      ${g.map(x => `<tr><td style="white-space:nowrap"><b style="font-weight:600;color:var(--navy)">${esc(x.t)}</b></td><td>${esc(x.why)}</td><td><button class="link" ${drill(x.go)}>${esc(x.lab)}</button></td></tr>`).join('')}
+      </tbody></table></div></section>`;
+  }
+
   /* ---------- หน้า 1: Executive Snapshot ---------- */
   function pExec() {
     const asof = S.meta.asof, y0 = asof.slice(0, 4) + '-01-01', cm = M.compareMonth(S, st.ym, F()), to = selTo(), mo = +st.ym.slice(5, 7);
@@ -290,7 +345,11 @@
     const pm = M.poSelect(S, { from: cm.from, to: cm.to, unit: st.unit }), py = M.poSelect(S, { from: y0, to, unit: st.unit });
     const gm = M.costByGroup(pm), gy = M.costByGroup(py), cpm = chemPerM3(st.unit, mo);
     const mwo = M.woSelect(S, { from: cm.from, to: cm.to, unit: st.unit }), wst = M.woStats(M.woSelect(S, { unit: st.unit }), asof);
-    const k3 = MBv(gm.chem || 0), k4 = MBv(gm.maint || 0);
+    /* เดือนที่ยังไม่มี PO ในหมวดนั้นจะไม่โชว์เลข 0 เป็นพาดหัว — เปลี่ยนไปแสดงยอดสะสมปีและบอกตรง ๆ ว่าเดือนนี้ยังไม่มีใบสั่งซื้อ */
+    const poKpi = (mv, yv, name) => mv ? { v: mv, lab: ' · ' + thM(st.ym), sum: 'สะสมปี ' + MB(yv), note: '' }
+      : { v: yv, lab: ' · สะสมปี ' + (+asof.slice(0, 4) + 543), sum: thM(st.ym) + ' ยังไม่มีใบสั่งซื้อ' + name, note: '' };
+    const c3 = poKpi(gm.chem || 0, gy.chem || 0, 'สารเคมี'), c4 = poKpi(gm.maint || 0, gy.maint || 0, 'ซ่อมบำรุง');
+    const k3 = MBv(c3.v), k4 = MBv(c4.v);
     const cser = M.costMonthly(S, { unit: st.unit }, +asof.slice(0, 4)), ckeys = [{ k: 'chem', label: 'สารเคมี', c: GC.chem }, { k: 'maint', label: 'ซ่อมบำรุง-เครื่องจักรและอะไหล่', c: GC.maint }, { k: 'capex', label: 'สินทรัพย์ (เครื่องจักร/อาคาร/อุปกรณ์)', c: GC.capex }];
     const all = insights(), ins = ['p3', 'chem', 'maint', 'pre', 'ar'].map(id => all.filter(i => i.id === id)[0]).filter(Boolean);
     const follow = [
@@ -301,9 +360,12 @@
     ].filter(x => x.v > 0).sort((a, b) => b.v - a.v);
     return `<div class="grid g4">
       <button class="card accent navy kpi" ${drill(() => openTable(linesTable('ยอดเรียกเก็บ ' + thM(st.ym), monL, `วันที่ออก ${thDs(cm.from)} – ${thDs(cm.to)}`)))}><span class="lab">การขาย · ยอดเรียกเก็บสุทธิก่อน VAT · ${thM(st.ym)}</span><span class="val num">${k1[0]} <small>${k1[1]}</small></span>${delta(cm.pct, cmpLabel)}<span class="full num">${B(cm.cur.net)} บาท${partialNote(st.ym)}</span><span class="full num">สะสมปี ${MB(ytd.net)} · หัก Pre-Treatment ${MB(-ytd.deduction)}</span><span class="more">ดู BL ${nf(cm.cur.docs)} ฉบับ →</span></button>
-      <button class="card accent kpi" ${drill(goPage('ops'))}><span class="lab">การผลิต · ปริมาณน้ำรับจริง${lm ? ' · ' + TH[lm - 1] + ' 2569' : ''}</span><span class="val num">${va !== null ? nf(va) + ' <small>ลบ.ม.</small>' : NA()}</span>${va !== null ? delta(M.pct(va, vp), 'เทียบ ' + (lm ? TH[lm - 1] : '') + ' 2568') : ''}<span class="full num">${vy !== null && va !== null ? 'สะสม ม.ค.–' + TH[lm - 1] + ' ' + nf(vy) + ' ลบ.ม.' : 'ไฟล์ OM ไม่มีปริมาณน้ำของพื้นที่ที่เลือก'}${lm && lm < mo ? ' · ไฟล์ OM ถึง ' + TH[lm - 1] : ''}</span><span class="more">ดูการผลิตและสารเคมี →</span></button>
-      <button class="card accent sky kpi" ${drill(() => openTable(poLineTable('PO สารเคมี · ' + thM(st.ym), M.poSelect(S, { from: cm.from, to: cm.to, unit: st.unit, grp: 'chem' }))))}><span class="lab">ต้นทุนผลิต · PO สารเคมี · ${thM(st.ym)}</span><span class="val num">${k3[0]} <small>${k3[1]}</small></span><span class="full num">สะสมปี ${MB(gy.chem || 0)}${cpm ? ' · ' + nf(cpm.rate, 3) + ' บาท/ลบ.ม. (ม.ค.–' + TH[cpm.last - 1] + ')' : ''}</span><span class="full">มูลค่าสั่งซื้อตามวันที่ PO ไม่ใช่ปริมาณที่ใช้จริง</span><span class="more">ดูรายการ PO →</span></button>
-      <button class="card accent warn kpi" ${drill(goPage('maint'))}><span class="lab">ซ่อมบำรุง · PO เครื่องจักรและอะไหล่ · ${thM(st.ym)}</span><span class="val num">${k4[0]} <small>${k4[1]}</small></span><span class="full num">สะสมปี ${MB(gy.maint || 0)} · สินทรัพย์ ${MB(gy.capex || 0)}</span><span class="full">${S.maint ? `ใบงานแจ้งซ่อมเดือนนี้ ${nf(mwo.length)} · ค้าง ${nf(wst.open)} (เกิน SLA ${nf(wst.openOver.length)})` : 'ยังไม่มีไฟล์ใบงานแจ้งซ่อม'}</span><span class="more">ดู Maintenance Snapshot →</span></button></div>
+      <button class="card accent kpi" ${drill(goSub('ops', 'prod'))}><span class="lab">การผลิต · ปริมาณน้ำรับจริง${lm ? ' · ' + TH[lm - 1] + ' 2569' : ''}</span><span class="val num">${va !== null ? nf(va) + ' <small>ลบ.ม.</small>' : NA()}</span>${va !== null ? delta(M.pct(va, vp), 'เทียบ ' + (lm ? TH[lm - 1] : '') + ' 2568') : ''}<span class="full num">${vy !== null && va !== null ? 'สะสม ม.ค.–' + TH[lm - 1] + ' ' + nf(vy) + ' ลบ.ม.' : 'ไฟล์ OM ไม่มีปริมาณน้ำของพื้นที่ที่เลือก'}${lm && lm < mo ? ' · ไฟล์ OM ถึง ' + TH[lm - 1] : ''}</span><span class="more">ดูการผลิตและสารเคมี →</span></button>
+      <button class="card accent sky kpi" ${drill(() => (gm.chem ? openTable(poLineTable('PO สารเคมี · ' + thM(st.ym), M.poSelect(S, { from: cm.from, to: cm.to, unit: st.unit, grp: 'chem' })))
+        : openTable(poLineTable('PO สารเคมี · สะสมปี', M.poSelect(S, { from: y0, to: to, unit: st.unit, grp: 'chem' })))))}><span class="lab">ต้นทุนผลิต · PO สารเคมี${c3.lab}</span><span class="val num">${k3[0]} <small>${k3[1]}</small></span><span class="full num">${esc(c3.sum)}${cpm ? ' · ' + nf(cpm.rate, 3) + ' บาท/ลบ.ม. (ม.ค.–' + TH[cpm.last - 1] + ')' : ''}</span><span class="full">มูลค่าสั่งซื้อตามวันที่ PO ไม่ใช่ปริมาณที่ใช้จริง</span><span class="more">ดูรายการ PO →</span></button>
+      <button class="card accent warn kpi" ${drill(goSub('ops', 'maint'))}><span class="lab">ซ่อมบำรุง · PO เครื่องจักรและอะไหล่${c4.lab}</span><span class="val num">${k4[0]} <small>${k4[1]}</small></span><span class="full num">${esc(c4.sum)} · สินทรัพย์สะสม ${MB(gy.capex || 0)}</span><span class="full">${S.maint ? `ใบงานแจ้งซ่อมเดือนนี้ ${nf(mwo.length)} · ค้าง ${nf(wst.open)} (เกิน SLA ${nf(wst.openOver.length)})` : 'ยังไม่มีไฟล์ใบงานแจ้งซ่อม'}</span><span class="more">ดู Maintenance Snapshot →</span></button>
+      ${plCard(cm)}</div>
+    ${execGaps()}
     <div class="grid g2">
       <section class="card"><div class="head"><div><h2>การขาย: ค่าบริการ รายการหัก และยอดสุทธิรายเดือน</h2><p class="sub">BL ตามวันที่ออกเอกสาร ปี ${+asof.slice(0, 4) + 543} · ก่อน VAT · กดแท่งเพื่อดูเอกสาร${st.unit ? ' · ' + esc(M.unitLabel(st.unit, areas())) : ''}</p></div></div>
         ${monthlyChart(ser, s => openTable(linesTable('ยอดเรียกเก็บ ' + thM(s.ym), M.selectLines(S, F({ from: s.ym + '-01', to: M.monthEnd(s.ym) })), 'ตามวันที่ออกเอกสาร')))}</section>
@@ -374,6 +436,122 @@
       <section class="card"><div class="head"><div><h2>เจ้าหนี้ตามหน่วยงาน/พื้นที่ และประเภท</h2><p class="sub">ตาม department ของเอกสาร</p></div></div>${grp(p => p.dept ? ((areas()[p.dept] || {}).name || p.dept) : '(ไม่ระบุหน่วยงาน)', 'หน่วยงาน/พื้นที่')}<div style="height:12px"></div>${grp(p => p.conv === 'AP' ? 'AP — ซื้อสินค้า/บริการผ่านใบสั่งซื้อ' : p.conv === 'EXP' ? 'EXP — ค่าใช้จ่ายอื่น' : p.conv, 'ประเภทเอกสาร')}</section></div>
     <section class="card"><div class="head"><div><h2>ภาระ PO ที่อนุมัติแล้วและยังไม่ตั้งเจ้าหนี้ครบ</h2><p class="sub">แสดงแยกจากเจ้าหนี้ — PO ที่อนุมัติยังไม่ใช่เจ้าหนี้ที่ตั้งบัญชี · ${nf(cmt.rows.length)} ใบ รวม ${B(cmt.total)} บาท (ก่อน VAT ตามรายงาน PO3)</p></div></div>${tableSlot(Object.assign(poTable('', cmt.rows), { size: 10 }))}</section>
     <section class="card"><div class="head"><div><h2>รายการเจ้าหนี้ทั้งหมด</h2><p class="sub">จาก get_payable_due (ครบกำหนดถึง 31 ธ.ค. 2570) · ไม่รวมเอกสารลงวันที่อนาคต</p></div></div>${tableSlot(Object.assign(payTable('', pv.rows, ''), { size: 12 }))}</section>`;
+  }
+
+  /* ---------- การเงิน › งบบริหาร (P&L) และต้นทุน — ประกอบจาก get_ledger ---------- */
+  function pPL() {
+    const p = PL(); if (!p) return `<div class="empty" style="border-style:solid">snapshot นี้ไม่มีข้อมูลสมุดบัญชี (get_ledger) — ดูเหตุผลในหน้าสถานะข้อมูล</div>`;
+    const ms = p.months, last = ms[ms.length - 1], gk = Object.keys(p.groups);
+    const mcell = (v, cls) => `<td class="r num ${cls || ''}">${v ? B(v) : '–'}</td>`;
+    const cu = plCostUsable(st.ym), cuy = plCostUsable();
+    const maint = p.accounts.filter(a => p.maint_accounts.indexOf(a.code) >= 0), maintTot = M.sum(maint, a => a.total);
+    const adjMonths = ms.filter(m => (p.month_status[m] || {}).adjust_rows);
+    const lineRow = l => `<tr class="${l.derived ? 'rowtot' : ''}"><td>${l.derived ? '<b style="font-weight:600;color:var(--navy)">' + esc(l.label) + '</b>' : esc(l.label)}</td>${ms.map(m => mcell(l.by_month[m])).join('')}<td class="r num"><b>${B(l.total)}</b></td></tr>`;
+    return `<div class="empty" style="border-style:solid"><b>ยังไม่แสดงกำไรเป็น KPI</b> — ${esc(p.profit_blocked_reason)}</div>
+    <div class="grid g3">
+      <button class="card accent navy kpi" ${drill(() => openTable(plAccTable('บัญชีต้นทุนและค่าใช้จ่ายที่ใช้วัดผลได้', a => p.cost_usable_groups.indexOf(a.group) >= 0)))}>
+        <span class="lab">ต้นทุนและค่าใช้จ่ายดำเนินงาน · ${thM(st.ym)}</span><span class="val num">${cu === null ? NA() : MBv(cu)[0] + ' <small>' + MBv(cu)[1] + '</small>'}</span>
+        <span class="full num">สะสมทั้งปีถึง ${thM(last)} ${MB(cuy)}${plPartial(st.ym) ? partialNote(st.ym) : ''}</span>
+        <span class="full">กลุ่มที่ใช้วัดผลได้: ${esc(p.cost_usable_groups.map(k => p.groups[k].label).join(' · '))} · ตัดบรรทัดรายการปรับสัญญาเช่าออกแล้ว</span><span class="more">ดูรายบัญชี →</span></button>
+      <button class="card accent sky kpi" ${drill(() => openTable(plAccTable('บัญชีค่าซ่อมแซมและบำรุงรักษา', a => p.maint_accounts.indexOf(a.code) >= 0, 'ใช้เทียบกับมูลค่า PO ซ่อมบำรุงในหน้าปฏิบัติการ — PO ไม่ใช่ต้นทุนที่รับรู้')))}>
+        <span class="lab">ค่าซ่อมแซมและบำรุงรักษาตามบัญชี · สะสม</span><span class="val num">${MBv(maintTot)[0]} <small>${MBv(maintTot)[1]}</small></span>
+        <span class="full num">${nf(maint.length)} บัญชี · ${esc(p.maint_accounts.join(', '))}</span>
+        <span class="full">ตัวเลขที่รับรู้ในบัญชี ซึ่งต่างจากมูลค่า PO ที่สั่งซื้อ — ใช้คู่กันเพื่อกระทบยอด</span><span class="more">ดูรายบัญชี →</span></button>
+      <div class="card accent warn mini"><h3>สถานะความพร้อมของงบ</h3>
+        <div class="row"><span>เดือนที่ปิดบัญชีแล้ว</span><b>${NA('ไม่มี API บอกสถานะปิดบัญชี')}</b></div>
+        <div class="row"><span>เดือนที่มีรายการปรับ/กลับรายการ</span><b class="num">${nf(adjMonths.length)} จาก ${nf(ms.length)} เดือน</b></div>
+        <div class="row"><span>บรรทัดรายการปรับสัญญาเช่า</span><b class="num">${nf(p.lease_adjust.rows)} บรรทัด · ${nf(p.lease_adjust.docs.length)} เอกสาร</b></div>
+        <div class="row"><span>บัญชีนอกผังที่ตัดออก</span><b class="num">${Object.keys(p.excluded).length ? nf(Object.keys(p.excluded).length) + ' รหัส' : 'ไม่มี'}</b></div>
+        <p class="note">ทุกเดือนกำกับว่า “ผลเบื้องต้น (ยังไม่ปิดบัญชี)”</p></div></div>
+    <section class="card"><div class="head"><div><h2>งบกำไรขาดทุนเพื่อการบริหาร (ตามที่บันทึกในบัญชี)</h2><p class="sub">ประกอบจาก get_ledger ตามการจัดกลุ่มในไฟล์ config · บาท · รายได้ = เครดิต − เดบิต · ต้นทุน/ค่าใช้จ่าย = เดบิต − เครดิต · ${esc(p.note)}</p></div></div>
+      <div class="tbl-wrap"><table style="min-width:${180 + (ms.length + 1) * 110}px"><thead><tr><th>บรรทัด</th>${ms.map(m => `<th class="r">${TH[+m.slice(5) - 1]}</th>`).join('')}<th class="r">รวม</th></tr></thead>
+      <tbody>${p.lines.map(lineRow).join('')}</tbody></table></div>
+      <p class="note" style="margin-top:10px">ตัวเลขติดลบสลับเครื่องหมายในเดือนที่มีรายการปรับเป็นวิธีลูกหนี้สัญญาเช่า — อ่านทั้งกลุ่มและทั้งปี ไม่อ่านแยกเดือน · ไม่นำ “กำไรขั้นต้น” จากรายงานการขาย (ต้นทุน 0) มาใช้</p></section>
+    <section class="card"><div class="head"><div><h2>กลุ่มในงบ: ใช้วัดผลได้ และกลุ่มที่ถูกรายการปรับครอบ</h2><p class="sub">คอลัมน์ “สะสม (ตัดรายการปรับ)” ตัดบรรทัดที่อ้างถึงลูกหนี้สัญญาเช่า/การกลับรายการออก · กดแถวเพื่อดูรายบัญชี</p></div></div>
+      <div class="tbl-wrap"><table><thead><tr><th>กลุ่ม</th><th>หมวด</th><th class="r">${thM(st.ym)}</th><th class="r">สะสม (ตามบัญชี)</th><th class="r">สะสม (ตัดรายการปรับ)</th><th>ใช้วัดผลรายเดือน</th></tr></thead><tbody>
+      ${gk.map(k => { const g = p.groups[k]; return `<tr class="rowlink" ${drill(() => openTable(plAccTable(g.label, a => a.group === k, g.caveat || '')))} tabindex="0"><td><b style="font-weight:600;color:var(--navy)">${esc(g.label)}</b>${g.caveat ? `<br><span class="note">${esc(g.caveat)}</span>` : ''}</td><td>${g.kind === 'revenue' ? 'รายได้' : g.kind === 'cost' ? 'ต้นทุน' : g.kind === 'tax' ? 'ภาษี' : 'ค่าใช้จ่าย'}</td>${mcell(g.by_month[st.ym])}<td class="r num">${B(g.total)}</td><td class="r num">${B(g.total_ex_lease)}</td><td>${g.management ? 'ใช้ได้' : '<span class="tag wait">ไม่ใช้วัดผล</span>'}</td></tr>`; }).join('')}
+      </tbody></table></div></section>
+    <div class="grid g2">
+      <section class="card"><div class="head"><div><h2>ต้นทุนและค่าใช้จ่ายดำเนินงานรายเดือน</h2><p class="sub">กลุ่มที่ใช้วัดผลได้ · ตัดบรรทัดรายการปรับสัญญาเช่าออก · ล้านบาท · ${thM(ms[ms.length - 1])} เป็นข้อมูลบางเดือน</p></div></div>
+        ${lineChart(ms.map(m => TH[+m.slice(5) - 1]), [{ name: 'ต้นทุน+ค่าใช้จ่ายดำเนินงาน', c: 'var(--navy)', v: ms.map(m => (p.cost_usable[m] || 0) / 1e8) }], 'ล้านบาท', v => nf(v, 1))}</section>
+      <section class="card"><div class="head"><div><h2>สถานะรายเดือนของสมุดบัญชี</h2><p class="sub">จำนวนบรรทัด บรรทัดรายการปรับ มูลค่าสัมบูรณ์ของรายการปรับ และบรรทัดประมาณการ/ค้างรับค้างจ่าย</p></div></div>
+        <div class="tbl-wrap"><table><thead><tr><th>เดือน</th><th class="r">บรรทัด</th><th class="r">รายการปรับ</th><th class="r">มูลค่ารายการปรับ</th><th class="r">ประมาณการ/ค้าง</th><th>สถานะ</th></tr></thead><tbody>
+        ${ms.map(m => { const s = p.month_status[m] || {}; return `<tr><td>${thM(m)}</td><td class="r num">${nf(s.rows || 0)}</td><td class="r num">${s.adjust_rows ? nf(s.adjust_rows) : '–'}</td><td class="r num">${s.adjust_abs ? B(s.adjust_abs) : '–'}</td><td class="r num">${s.estimate_rows ? nf(s.estimate_rows) : '–'}</td><td><span class="tag wait">ผลเบื้องต้น</span></td></tr>`; }).join('')}
+        </tbody></table></div></section></div>
+    <section class="card"><div class="head"><div><h2>เอกสารที่มีรายการปรับวิธีลูกหนี้สัญญาเช่า</h2><p class="sub">${nf(p.lease_adjust.docs.length)} เอกสาร · มูลค่าสัมบูรณ์รวม ${MB(p.lease_adjust.abs)} — ขาคู่ของรายการเหล่านี้อยู่ในงบดุล ซึ่ง API ที่ใช้ได้อ่านไม่ได้</p></div></div>
+      <p class="note">${esc(p.lease_adjust.docs.join(' · ')) || 'ไม่พบ'}</p></section>
+    <section class="card"><div class="head"><div><h2>บัญชีทั้งหมดในงบ</h2><p class="sub">${nf(p.accounts.length)} บัญชี · ค้นหา กรอง เรียง และส่งออก CSV ได้</p></div></div>${tableSlot(Object.assign(plAccTable('', () => true), { size: 12 }))}</section>`;
+  }
+
+  /* ---------- การขาย › ลูกค้าใหม่และโอกาสขาย (CRM/BD) ---------- */
+  function pCRM() {
+    const need = [['ลูกค้าใหม่ (จำนวนและมูลค่า)', 'ทะเบียนลูกค้าใหม่พร้อมวันที่เริ่มสัญญา — ใน TRCLOUD ของ SAM ไม่มีเอกสาร lead/quotation'],
+      ['โอกาสขายและมูลค่าท่อ (Pipeline)', 'รายการโอกาสขายพร้อมมูลค่า ขั้นตอน และความน่าจะเป็น จากฝ่ายพัฒนาธุรกิจ'],
+      ['อัตราการปิดงาน (Win rate)', 'ผลแพ้/ชนะของข้อเสนอที่ยื่น พร้อมเหตุผล'],
+      ['ระยะเวลาปิดงานเฉลี่ย', 'วันที่เริ่มคุย ถึงวันที่ลงนามสัญญา'],
+      ['การต่อสัญญาและการสูญเสียลูกค้า', 'วันสิ้นสุดสัญญาและผลการต่อสัญญารายพื้นที่']];
+    return `<div class="empty" style="border-style:solid"><b>ยังไม่มีแหล่งข้อมูล</b> — ค้นเอกสาร lead และ quotation ของ SAM ใน TRCLOUD แล้วไม่พบรายการ จึงไม่แสดงกรวยการขาย ไม่แสดงอัตราการปิดงาน และไม่แสดงค่าศูนย์ใด ๆ ในหน้านี้</div>
+    <section class="card"><div class="head"><div><h2>ข้อมูลที่ต้องได้รับก่อนจึงจะแสดงได้</h2><p class="sub">ส่งถึงฝ่ายพัฒนาธุรกิจ — รายการเดียวกันอยู่ใน docs/DATA-REQUESTS.md</p></div></div>
+      <div class="tbl-wrap"><table><thead><tr><th>KPI</th><th>ข้อมูลที่ต้องการ</th><th>สถานะ</th></tr></thead><tbody>
+      ${need.map(n => `<tr><td style="white-space:nowrap"><b style="font-weight:600;color:var(--navy)">${esc(n[0])}</b></td><td>${esc(n[1])}</td><td><span class="tag wait">รอข้อมูล</span></td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="note" style="margin-top:10px">เมื่อได้ข้อมูลแล้วจะต่อเข้าหน้านี้โดยไม่เปลี่ยนโครงระบบ — ยอดเรียกเก็บปัจจุบันอยู่ในหน้าย่อย “ยอดเรียกเก็บและพื้นที่”</p></section>`;
+  }
+
+  /* ---------- โครงการ ---------- */
+  function pProj() {
+    const need = [['รายชื่อโครงการและสถานะ', 'ทะเบียนโครงการ (ชื่อ เจ้าของงาน มูลค่า วันเริ่ม-สิ้นสุด สถานะ) — ไม่พบ project ในข้อมูลที่เข้าถึงได้'],
+      ['ความคืบหน้าเทียบแผน', 'แผนงานและเปอร์เซ็นต์ความคืบหน้าที่ผู้ควบคุมงานยืนยัน'],
+      ['ต้นทุนโครงการเทียบงบ', 'งบประมาณรายโครงการ และการผูกเอกสาร PO/AP เข้ากับรหัสโครงการ'],
+      ['Resource Utilization', 'ชั่วโมงทำงานจริงรายบุคคล/ทีม — ไม่มีระบบบันทึกเวลาในแหล่งที่เข้าถึงได้ จึงไม่คำนวณจากจำนวนพนักงานหรือค่าแรงแทน'],
+      ['ความล่าช้าและสาเหตุ', 'กำหนดส่งมอบ วันที่ส่งมอบจริง สาเหตุความล่าช้า และการแก้ไข']];
+    return `<div class="empty" style="border-style:solid"><b>ยังไม่มีแหล่งข้อมูล</b> — ข้อมูลที่เข้าถึงได้ของ SAM เป็นเอกสารบัญชี (BL/IV/PO/AP) ไฟล์การเดินระบบ และใบงานแจ้งซ่อม ซึ่งไม่มีรหัสโครงการและไม่มีชั่วโมงทำงาน · หน้านี้จึงไม่แสดงตัวเลขสมมุติและไม่แสดง Resource Utilization</div>
+    <section class="card"><div class="head"><div><h2>ข้อมูลที่ต้องได้รับก่อนจึงจะแสดงได้</h2><p class="sub">ส่งถึงฝ่ายโครงการ/วิศวกรรม</p></div></div>
+      <div class="tbl-wrap"><table><thead><tr><th>KPI</th><th>ข้อมูลที่ต้องการ</th><th>สถานะ</th></tr></thead><tbody>
+      ${need.map(n => `<tr><td style="white-space:nowrap"><b style="font-weight:600;color:var(--navy)">${esc(n[0])}</b></td><td>${esc(n[1])}</td><td><span class="tag wait">รอข้อมูล</span></td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="note" style="margin-top:10px">สิ่งที่ใกล้เคียงที่สุดและมีข้อมูลจริงแล้วคือภาระ PO ที่อนุมัติแล้วยังไม่ตั้งเจ้าหนี้ (หน้าการเงิน › เจ้าหนี้) และใบงานแจ้งซ่อม (หน้าปฏิบัติการ › Maintenance Snapshot)</p></section>`;
+  }
+
+  /* ---------- กลยุทธ์: แนวโน้มและการเติบโต ---------- */
+  function pStrat() {
+    const asof = S.meta.asof, y = +asof.slice(0, 4), y0 = y + '-01-01', to = selTo(), ar = areas();
+    const ser = M.monthly(S, F()), ms = ser.map(s => s.ym);
+    const cur = M.billing(M.selectLines(S, F({ from: y0, to }))), prevY = M.billing(M.selectLines(S, F({ from: (y - 1) + '-01-01', to: (y - 1) + '-12-31' })));
+    const cats = Object.keys(M.CAT).filter(c => cur.byCat[c] && M.CAT[c].group !== 'deduction');
+    const units = M.byUnit(S, F({ from: y0, to })).filter(u => u.net), umax = Math.max(1, ...units.map(u => u.net));
+    const phase = {}; S.areas.forEach(a => { if (a.phase) phase[a.code] = a.phase; });
+    const byPhase = {}; M.selectLines(S, F({ from: y0, to })).forEach(l => { const k = phase[l.dept] || 'ไม่ระบุเฟส'; byPhase[k] = (byPhase[k] || 0) + l.amt; });
+    const o = M.om(S), lm = o ? o.last('volume', 'actual', y) : 0;
+    const vol = []; for (let i = 1; i <= 12; i++) vol.push(i <= lm ? omVol(y, i, st.unit) : null);
+    const volP = []; for (let i = 1; i <= 12; i++) volP.push(omVol(y - 1, i, st.unit));
+    const sets = [{ name: 'ยอดเรียกเก็บสุทธิ ' + (y + 543), c: 'var(--navy)', v: ms.map(m => (ser.filter(s => s.ym === m)[0] || {}).net / 1e8 || null) }];
+    const trend = M.monthly(S, F()).map(s => s.net);
+    const g = trend.length >= 4 ? M.pct(M.sum(trend.slice(-3), x => x), M.sum(trend.slice(-6, -3), x => x)) : null;
+    return `<div class="empty" style="border-style:solid">หน้านี้ดูแนวโน้มจากข้อมูลที่ตรวจย้อนได้เท่านั้น — ยอดเรียกเก็บตาม BL ปริมาณน้ำตามไฟล์ OM และมูลค่า PO · <b>ไม่คำนวณมูลค่าลูกค้าตลอดอายุ (CLV)</b> เพราะยังไม่มีนิยามอายุสัญญาและต้นทุนต่อลูกค้าที่ฝ่ายบัญชียืนยัน และไม่ตั้งเป้าหมายหรือเกณฑ์ขึ้นเอง</div>
+    <div class="grid g3">
+      <div class="card accent navy mini"><h3>การเติบโตของยอดเรียกเก็บ</h3>
+        <div class="row"><span>สะสม ${TH[0]}–${TH[+to.slice(5, 7) - 1]} ${y + 543}</span><b class="num">${MB(cur.net)}</b></div>
+        <div class="row"><span>ทั้งปี ${y + 542}</span><b class="num">${prevY.net ? MB(prevY.net) : NA('ไม่มี BL ปีก่อนในชุดข้อมูล')}</b></div>
+        <div class="row"><span>3 เดือนล่าสุดเทียบ 3 เดือนก่อนหน้า</span><b class="num">${pctTxt(g)}</b></div>
+        <p class="note">ยอดสุทธิก่อน VAT หลังหักรายการ Pre-Treatment · เดือนล่าสุดเป็นข้อมูลบางเดือน</p></div>
+      <div class="card accent sky mini"><h3>การเติบโตของปริมาณน้ำ</h3>
+        <div class="row"><span>สะสม ${TH[0]}–${lm ? TH[lm - 1] : '–'} ${y + 543}</span><b class="num">${lm ? nf(M.sum(vol.filter(v => v !== null), v => v)) + ' ลบ.ม.' : NA()}</b></div>
+        <div class="row"><span>ช่วงเดียวกันปี ${y + 542}</span><b class="num">${lm && volP.slice(0, lm).every(v => v !== null) ? nf(M.sum(volP.slice(0, lm), v => v)) + ' ลบ.ม.' : NA('ไฟล์ OM ไม่มีข้อมูลครบ')}</b></div>
+        <div class="row"><span>เทียบปีก่อน</span><b class="num">${lm && volP.slice(0, lm).every(v => v !== null) ? pctTxt(M.pct(M.sum(vol.filter(v => v !== null), v => v), M.sum(volP.slice(0, lm), v => v))) : NA()}</b></div>
+        <p class="note">ปริมาณน้ำรับจริงจากไฟล์ OM ไม่ใช่เอกสารบัญชี</p></div>
+      <div class="card accent mini"><h3>โครงสร้างรายได้ตามเฟส</h3>
+        ${Object.keys(byPhase).sort().map(k => `<div class="row"><span>${esc(k)}</span><b class="num">${MB(byPhase[k])} · ${nf(byPhase[k] / cur.net * 100, 1)}%</b></div>`).join('')}
+        <p class="note">เฟส 1&2 ออกบิลรวมที่สำนักงานใหญ่ จึงแยกรายฟาร์มไม่ได้</p></div></div>
+    <div class="grid g2">
+      <section class="card"><div class="head"><div><h2>แนวโน้มยอดเรียกเก็บรายเดือน</h2><p class="sub">ล้านบาท · สุทธิก่อน VAT · ปี ${y + 543}${st.unit ? ' · ' + esc(M.unitLabel(st.unit, ar)) : ''}</p></div></div>
+        ${lineChart(ms.map(m => TH[+m.slice(5) - 1]), sets, 'ล้านบาท', v => nf(v, 1))}</section>
+      <section class="card"><div class="head"><div><h2>การเติบโตตามประเภทบริการ</h2><p class="sub">สะสมปีนี้เทียบปีก่อน · ก่อนรายการหัก · กดแถวเพื่อดูเอกสาร</p></div></div>
+        <div class="tbl-wrap"><table><thead><tr><th>ประเภทบริการ</th><th class="r">สะสม ${y + 543}</th><th class="r">ทั้งปี ${y + 542}</th><th class="r">เทียบ</th></tr></thead><tbody>
+        ${cats.map(c => `<tr class="rowlink" ${drill(() => openTable(linesTable(M.CAT[c].label, M.selectLines(S, F({ from: y0, to })).filter(l => l.cat === c), 'สะสมปี ' + (y + 543))))} tabindex="0"><td>${esc(M.CAT[c].label)}</td><td class="r num">${B(cur.byCat[c])}</td><td class="r num">${prevY.byCat[c] ? B(prevY.byCat[c]) : '–'}</td><td class="r num">${prevY.byCat[c] ? pctTxt(M.pct(cur.byCat[c], prevY.byCat[c])) : NA('ไม่มีปีก่อน')}</td></tr>`).join('')}
+        </tbody></table></div></section></div>
+    <section class="card"><div class="head"><div><h2>อันดับพื้นที่ตามยอดเรียกเก็บสะสม ${y + 543}</h2><p class="sub">สุทธิก่อน VAT · กดแถบเพื่อดูเอกสาร</p></div></div>
+      ${bars(units.map(u => ({ label: u.label, v: u.net, txt: MB(u.net) + ' · ' + nf(u.net / cur.net * 100, 1) + '%', cls: u.unit === 'OTHER' ? 'b3' : 'b2', drill: () => openTable(linesTable(u.label + ' · สะสมปี', M.selectLines(S, { from: y0, to, unit: u.unit }), 'ตามวันที่ออกเอกสาร')) })), umax)}</section>`;
   }
 
   /* ---------- หน้า 5: การเดินระบบ (OM) ---------- */
@@ -501,6 +679,11 @@
     <section class="card"><div class="head"><div><h2>นิยามและสูตร KPI</h2></div></div><div class="tbl-wrap"><table><tbody>${defs.map(d => `<tr><td style="white-space:nowrap"><b style="font-weight:600;color:var(--navy)">${d[0]}</b></td><td>${d[1]}</td></tr>`).join('')}</tbody></table></div></section>`;
   }
 
+  /* ---------- หน้าที่มีหน้าย่อย: การขาย · การเงิน · ปฏิบัติการ ---------- */
+  const pSales = () => segTabs('sales') + ({ billing: pBilling, crm: pCRM }[subOf('sales')])();
+  const pFin = () => segTabs('fin') + ({ pl: pPL, recv: pRecv, pay: pPay }[subOf('fin')])();
+  const pOpsGrp = () => segTabs('ops') + ({ prod: pOps, maint: pMaint }[subOf('ops')])();
+
   /* ---------- โครงหน้า ---------- */
   function header() {
     const m = S.meta, ms = M.months(S), lastBl = S.bl_lines.reduce((a, l) => l.date > a ? l.date : a, '');
@@ -513,10 +696,23 @@
       <div class="hint">ช่วงที่เลือก ${thDs(cmp.from)} – ${thDs(cmp.to)}${cmp.partial ? ' (ข้อมูลบางเดือน)' : ''} · ${cmp.prev ? 'เทียบกับ ' + thDs(cmp.pfrom) + ' – ' + thDs(cmp.pto) + (cmp.partial ? ' (ช่วงวันเท่ากันของเดือนก่อน)' : '') : 'ไม่มีเดือนก่อนในชุดข้อมูล'} · พื้นที่: ${esc(st.unit ? M.unitLabel(st.unit, areas()) : 'ทุกพื้นที่')} · วันที่อ้างอิงลูกหนี้/เจ้าหนี้ ${asofTxt}</div>`;
     $('#f-m').onchange = e => { st.ym = e.target.value; render(false); }; $('#f-u').onchange = e => { st.unit = e.target.value; render(false); }; $('#f-p').onclick = () => window.print();
     $('#f-r').onclick = () => { st.unit = ''; st.ym = m.asof.slice(0, 7); render(false); };
-    const pg = (PAGES.filter(p => p[0] === st.page)[0] || PAGES[0])[1];
-    $('#ptitle').textContent = pg + (['exec', 'billing', 'maint'].indexOf(st.page) >= 0 ? ' · ' + thM(st.ym) : '');
-    $('#psub').textContent = 'SAM WATER SUPPLY · ' + (st.page === 'ops' ? 'ปริมาณน้ำจากไฟล์ OM · สารเคมีจาก PO ใน TRCLOUD' : st.page === 'maint' ? 'ใบงานแจ้งซ่อมจากระบบแจ้งซ่อม · ค่าใช้จ่ายจาก PO ใน TRCLOUD' : st.page === 'data' ? 'สำหรับผู้ตรวจสอบข้อมูล' : 'ข้อมูลเอกสารบัญชีจาก TRCLOUD');
-    $('#status').innerHTML = `<span class="chip"><span class="dot"></span>Snapshot — ไม่ใช่ข้อมูลสด</span><span class="chip plain">ดึงจาก TRCLOUD ${thT(m.fetched_to)}</span><span class="chip plain">BL ล่าสุด ${thDs(lastBl)}</span><span class="chip plain">วันที่อ้างอิง ${thDs(m.asof)}</span>${S.om ? `<span class="chip plain">ไฟล์ OM ถึง ${TH[M.om(S).last('volume', 'actual', 2026) - 1]} ${String(2569).slice(2)}</span>` : ''}${S.maint ? `<span class="chip plain">ใบงานแจ้งซ่อมถึง ${thDs(S.maint.source.reported_to)}</span>` : ''}<span class="chip warn">ข้อมูลบางส่วน: ยังไม่มีงบการเงินและคุณภาพน้ำ</span>`;
+    const pg = (PAGES.filter(p => p[0] === st.page)[0] || PAGES[0])[1], sb = subOf(st.page);
+    const sbLabel = sb ? (SUBS[st.page].filter(x => x[0] === sb)[0] || [])[1] : '', key = sb ? st.page + '/' + sb : st.page;
+    $('#ptitle').textContent = pg + (sbLabel ? ' · ' + sbLabel : '') + (['exec', 'sales/billing', 'fin/pl', 'ops/maint'].indexOf(key) >= 0 ? ' · ' + thM(st.ym) : '');
+    $('#psub').textContent = 'SAM WATER SUPPLY · ' + ({
+      'exec': 'สรุปสำหรับผู้บริหาร · อ่านได้ในหนึ่งนาที',
+      'sales/billing': 'ยอดเรียกเก็บตามเอกสาร BL ใน TRCLOUD',
+      'sales/crm': 'ลูกค้าใหม่และโอกาสขาย — ยังไม่มีแหล่งข้อมูล',
+      'fin/pl': 'งบบริหารประกอบจากสมุดรายวันแยกประเภท (get_ledger)',
+      'fin/recv': 'ลูกหนี้และการรับชำระจากเอกสารบัญชีใน TRCLOUD',
+      'fin/pay': 'เจ้าหนี้และภาระจัดซื้อจากเอกสารบัญชีใน TRCLOUD',
+      'proj': 'โครงการ — ยังไม่มีแหล่งข้อมูล',
+      'strat': 'แนวโน้มและการเติบโตจากข้อมูลที่ตรวจย้อนได้',
+      'ops/prod': 'ปริมาณน้ำจากไฟล์ OM · สารเคมีจาก PO ใน TRCLOUD',
+      'ops/maint': 'ใบงานแจ้งซ่อมจากระบบแจ้งซ่อม · ค่าใช้จ่ายจาก PO ใน TRCLOUD',
+      'data': 'สำหรับผู้ตรวจสอบข้อมูล'
+    }[key] || 'ข้อมูลเอกสารบัญชีจาก TRCLOUD');
+    $('#status').innerHTML = `<span class="chip"><span class="dot"></span>Snapshot — ไม่ใช่ข้อมูลสด</span><span class="chip plain">ดึงจาก TRCLOUD ${thT(m.fetched_to)}</span><span class="chip plain">BL ล่าสุด ${thDs(lastBl)}</span><span class="chip plain">วันที่อ้างอิง ${thDs(m.asof)}</span>${S.om ? `<span class="chip plain">ไฟล์ OM ถึง ${TH[M.om(S).last('volume', 'actual', 2026) - 1]} ${String(2569).slice(2)}</span>` : ''}${S.maint ? `<span class="chip plain">ใบงานแจ้งซ่อมถึง ${thDs(S.maint.source.reported_to)}</span>` : ''}<span class="chip warn">ข้อมูลบางส่วน: ยังไม่ปิดบัญชี · ไม่มีเงินสดและคุณภาพน้ำ</span>`;
     $('#tabs').innerHTML = PAGES.map(p => `<a href="#/${p[0]}" ${p[0] === st.page ? 'aria-current="page"' : ''}>${p[1]}</a>`).join('');
     $('#foot').innerHTML = `ใช้ภายในเพื่อการตรวจรับ · ข้อมูลการเงินของบริษัท ห้ามเผยแพร่ · สร้าง snapshot ${thT(m.built_at)} · ไม่มีปุ่มรีเฟรชเพราะระบบอ่านจาก snapshot — อัปเดตข้อมูลตาม README`;
   }
@@ -524,7 +720,7 @@
     document.body.classList.toggle('no-anim', anim === false);
     DR = []; TB = []; try { sessionStorage.setItem('sam-st', JSON.stringify(st)); } catch (e) { /* ไม่มี storage ก็ใช้งานได้ */ }
     header();
-    const fn = { exec: pExec, billing: pBilling, recv: pRecv, pay: pPay, ops: pOps, maint: pMaint, data: pData }[st.page] || pExec, main = $('#main');
+    const fn = { exec: pExec, sales: pSales, fin: pFin, proj: pProj, strat: pStrat, ops: pOpsGrp, data: pData }[st.page] || pExec, main = $('#main');
     try { main.innerHTML = fn(); } catch (e) { console.error(e); main.innerHTML = `<div class="state err">แสดงหน้านี้ไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
     main.querySelectorAll('[data-table]').forEach(el => mountTable(el, TB[+el.dataset.table]));
     document.title = 'SAM Executive Snapshot · ' + (PAGES.filter(p => p[0] === st.page)[0] || PAGES[0])[1];
@@ -545,7 +741,14 @@
   }
   document.addEventListener('click', e => { const t = e.target.closest('[data-drill]'); if (t) { e.preventDefault(); DR[+t.dataset.drill](); } else if (e.target.id === 'modal') closeModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr[data-drill], g[data-drill]')) { e.preventDefault(); DR[+e.target.dataset.drill](); } });
-  window.addEventListener('hashchange', () => { const p = location.hash.replace('#/', ''); if (PAGES.some(x => x[0] === p) && p !== st.page) { st.page = p; render(true); window.scrollTo(0, 0); } });
+  /* ลิงก์เดิมของเว็บรุ่นก่อน (#/billing ฯลฯ) ยังใช้ได้ — พาไปหน้าย่อยที่ย้ายเข้าไป */
+  const LEGACY = { billing: ['sales', 'billing'], recv: ['fin', 'recv'], pay: ['fin', 'pay'], maint: ['ops', 'maint'] };
+  function route(p) {
+    if (PAGES.some(x => x[0] === p)) return p;
+    if (LEGACY[p]) { st.sub[LEGACY[p][0]] = LEGACY[p][1]; return LEGACY[p][0]; }
+    return null;
+  }
+  window.addEventListener('hashchange', () => { const p = route(location.hash.replace('#/', '')); if (p && (p !== st.page || SUBS[p])) { st.page = p; render(true); window.scrollTo(0, 0); } });
   /* ---------- ธีม: อัตโนมัติ (ตามระบบ) / สว่าง / มืด ---------- */
   function setTheme(t) {
     if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
@@ -560,7 +763,9 @@
   function start(d) {
     S = d; if (!S || !S.bl_lines || !S.bl_lines.length) { $('#main').innerHTML = '<div class="state">snapshot ไม่มีข้อมูล BL — ตรวจการนำเข้าข้อมูล</div>'; return; }
     try { Object.assign(st, JSON.parse(sessionStorage.getItem('sam-st') || '{}')); } catch (e) { /* ใช้ค่าเริ่มต้น */ }
-    const hp = location.hash.replace('#/', ''); if (PAGES.some(x => x[0] === hp)) st.page = hp;
+    if (!st.sub || typeof st.sub !== 'object') st.sub = {};
+    const sp = route(st.page); st.page = sp || 'exec';
+    const hp = route(location.hash.replace('#/', '')); if (hp) st.page = hp;
     if (!st.ym || M.months(S).indexOf(st.ym) < 0) st.ym = S.meta.asof.slice(0, 7);
     window.SAM = { snap: S, state: st }; render(true);
   }
