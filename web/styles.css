@@ -9,11 +9,11 @@
   --bg: #F4F6FA; --card: #FFFFFF; --line: #DCE3EC; --ink: #1B2A3D; --muted: #5F6F84;
   --warn: #C2570C; --warnbg: #FDF1E4; --bad: #B42318; --badbg: #FCEBEA; --ok: #1E7A4C; --na: #8A96A6;
   --band: #17365D; --band2: #10294A; --bar1: #17365D; --bar2: #588BC8; --bar3: #8DB2DE; --barded: #F3B27A; --chem: #2A8C7B; --grid: #E3E8EF; --track: #EEF2F7;
-  --hover: #F6F9FD; --sel: #EEF4FB; --insbg: #FAFBFD; --inswarn: #FFFAF4; --shadow: 0 1px 2px rgba(23, 54, 93, .05); --input: #FFFFFF; --chip2: #EEF1F5;
+  --pill: #17365D; --pillfg: #FFFFFF; --hover: #F6F9FD; --sel: #EEF4FB; --insbg: #FAFBFD; --inswarn: #FFFAF4; --shadow: 0 1px 2px rgba(23, 54, 93, .05); --input: #FFFFFF; --chip2: #EEF1F5;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --navy: #DCE8F7; --blue: #6FB0E8; --mid: #6E9FD6; --sky: #8DB2DE; --pale: #1E3350; --bg: #0D1623; --card: #142133; --line: #26364C; --ink: #E4ECF6; --muted: #9AABC0; --warn: #F0A060; --warnbg: #3A2614; --bad: #F08A80; --badbg: #3A1A18; --ok: #6FD39A; --na: #7D8CA0; --band: #0A1829; --band2: #071222; --bar1: #8DB2DE; --bar2: #588BC8; --bar3: #3D5F86; --barded: #D98A4E; --chem: #5CC2AD; --grid: #24344A; --track: #1E2D42; --hover: #1B2B40; --sel: #1A2C44; --insbg: #172638; --inswarn: #2A2118; --shadow: 0 1px 2px rgba(0, 0, 0, .35); --input: #0F1B2B; --chip2: #1E2D42; color-scheme: dark; } }
-:root[data-theme="dark"] { --navy: #DCE8F7; --blue: #6FB0E8; --mid: #6E9FD6; --sky: #8DB2DE; --pale: #1E3350; --bg: #0D1623; --card: #142133; --line: #26364C; --ink: #E4ECF6; --muted: #9AABC0; --warn: #F0A060; --warnbg: #3A2614; --bad: #F08A80; --badbg: #3A1A18; --ok: #6FD39A; --na: #7D8CA0; --band: #0A1829; --band2: #071222; --bar1: #8DB2DE; --bar2: #588BC8; --bar3: #3D5F86; --barded: #D98A4E; --chem: #5CC2AD; --grid: #24344A; --track: #1E2D42; --hover: #1B2B40; --sel: #1A2C44; --insbg: #172638; --inswarn: #2A2118; --shadow: 0 1px 2px rgba(0, 0, 0, .35); --input: #0F1B2B; --chip2: #1E2D42; color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --navy: #DCE8F7; --blue: #6FB0E8; --mid: #6E9FD6; --sky: #8DB2DE; --pale: #1E3350; --bg: #0D1623; --card: #142133; --line: #26364C; --ink: #E4ECF6; --muted: #9AABC0; --warn: #F0A060; --warnbg: #3A2614; --bad: #F08A80; --badbg: #3A1A18; --ok: #6FD39A; --na: #7D8CA0; --band: #0A1829; --band2: #071222; --bar1: #8DB2DE; --bar2: #588BC8; --bar3: #3D5F86; --barded: #D98A4E; --chem: #5CC2AD; --grid: #24344A; --track: #1E2D42; --pill: #2E4E78; --pillfg: #EAF2FF; --hover: #1B2B40; --sel: #1A2C44; --insbg: #172638; --inswarn: #2A2118; --shadow: 0 1px 2px rgba(0, 0, 0, .35); --input: #0F1B2B; --chip2: #1E2D42; color-scheme: dark; } }
+:root[data-theme="dark"] { --navy: #DCE8F7; --blue: #6FB0E8; --mid: #6E9FD6; --sky: #8DB2DE; --pale: #1E3350; --bg: #0D1623; --card: #142133; --line: #26364C; --ink: #E4ECF6; --muted: #9AABC0; --warn: #F0A060; --warnbg: #3A2614; --bad: #F08A80; --badbg: #3A1A18; --ok: #6FD39A; --na: #7D8CA0; --band: #0A1829; --band2: #071222; --bar1: #8DB2DE; --bar2: #588BC8; --bar3: #3D5F86; --barded: #D98A4E; --chem: #5CC2AD; --grid: #24344A; --track: #1E2D42; --pill: #2E4E78; --pillfg: #EAF2FF; --hover: #1B2B40; --sel: #1A2C44; --insbg: #172638; --inswarn: #2A2118; --shadow: 0 1px 2px rgba(0, 0, 0, .35); --input: #0F1B2B; --chip2: #1E2D42; color-scheme: dark; }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Plex Thai', 'Sarabun', 'Leelawadee UI', Tahoma, sans-serif; font-size: 15px; line-height: 1.55; }
@@ -40,7 +40,8 @@ button, select, input { font: inherit; color: inherit; }
 /* แท็บหน้าย่อยในพื้นที่เนื้อหา (พื้นสว่าง) — ใช้โครงเดียวกับ .seg ของแถบด้านบน */
 .seg.subseg { border-color: var(--line); background: var(--card); align-self: flex-start; flex-wrap: wrap; max-width: 100%; }
 .seg.subseg button { color: var(--muted); }
-.seg.subseg button[aria-pressed="true"] { background: var(--navy); color: #fff; font-weight: 600; }
+.seg.subseg button:hover { background: var(--hover); color: var(--ink); }
+.seg.subseg button[aria-pressed="true"] { background: var(--pill); color: var(--pillfg); font-weight: 600; }
 .who { font-size: 13.5px; color: #DCE8F7; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn-out { min-height: 40px; padding: 0 16px; border: 1px solid #8DB2DE; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; font-size: 14px; }
 .btn-out:hover { background: rgba(141, 178, 222, .15); }
