@@ -1,0 +1,20 @@
+/* หน้าเข้าสู่ระบบ Microsoft 365 — ธีม SAM */
+body.locked { background: linear-gradient(160deg, #17365D 0%, #10294A 55%, #0A1829 100%); min-height: 100vh; }
+.lock { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.lock-box { display: flex; flex-direction: column; align-items: center; gap: 26px; width: min(100%, 420px); animation: rise .7s cubic-bezier(.2,.7,.2,1) both; }
+.lock .logo-zone { display: flex; align-items: center; gap: 18px; }
+.lock .logo-zone img { height: 64px; width: auto; }
+.lock .brand-txt { display: flex; flex-direction: column; border-left: 1px solid rgba(141,178,222,.6); padding-left: 18px; color: #C9DAEE; font-size: 13px; line-height: 1.35; }
+.lock .brand-txt b { color: #fff; font-size: 20px; font-weight: 600; }
+.lock form { background: var(--card); border-radius: 14px; padding: 28px; width: 100%; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 18px 44px rgba(0,0,0,.35); border-top: 4px solid #1B75BB; }
+.lock h1 { margin: 0; font-size: 21px; color: var(--navy); font-weight: 600; }
+.lock p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.6; }
+.lock .gbtn { min-height: 46px; border: 1px solid #17365D; background: #17365D; color: #fff; border-radius: 8px; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.lock .gbtn:hover:not(:disabled) { background: #1E4677; }
+.lock .gbtn:disabled { opacity: .7; cursor: default; }
+.lock .gbtn.ghost { background: transparent; color: var(--navy); border-color: var(--line); }
+.lock .ms { width: 18px; height: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.lock .ms i:nth-child(1) { background: #F25022; } .lock .ms i:nth-child(2) { background: #7FBA00; } .lock .ms i:nth-child(3) { background: #00A4EF; } .lock .ms i:nth-child(4) { background: #FFB900; }
+.lock .err { color: var(--bad); min-height: 1.2em; }
+.lock .fine { color: #9FB6D3; font-size: 12px; text-align: center; }
+[hidden] { display: none !important; }

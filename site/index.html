@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>SAM Executive Snapshot</title>
+<script>try { var t = localStorage.getItem('sam-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+<link rel="icon" href="assets/sam-logo.png">
+<link rel="stylesheet" href="styles.css?v=mwhd0swb">
+<link rel="stylesheet" href="gate.css?v=mwhd0swb">
+</head>
+<body class="locked">
+<div class="lock" id="lock">
+  <div class="lock-box">
+    <div class="logo-zone"><img src="assets/sam-logo-light.png" width="133" height="64" alt="SAM WATER SUPPLY"><div class="brand-txt"><b>Executive Snapshot</b><span>ภาพรวมยอดเรียกเก็บและการติดตามชำระ</span></div></div>
+    <form onsubmit="return false">
+      <h1>SAM Executive Snapshot</h1>
+      <p>รายงานภายในสำหรับผู้บริหาร · เข้าสู่ระบบด้วยบัญชี Microsoft 365 ของบริษัท</p>
+      <button class="gbtn" id="go" type="button" disabled>กำลังตรวจสอบ…</button>
+      <button class="gbtn ghost" id="out" type="button" hidden>ออกจากระบบ / ลองบัญชีอื่น</button>
+      <p class="err" id="err" role="alert"></p>
+    </form>
+    <p class="fine">ข้อมูลเข้ารหัส · เปิดได้เฉพาะผู้ที่ได้รับสิทธิ์</p>
+  </div>
+</div>
+<div id="dash-root" hidden>
+<header class="band">
+  <div class="band-in">
+    <div class="brand">
+      <img src="assets/sam-logo-light.png" alt="SAM WATER SUPPLY" width="96" height="46">
+      <div class="brand-txt"><b>Executive Snapshot</b><span>ภาพรวมยอดเรียกเก็บและการติดตามชำระ</span></div>
+    </div>
+    <div class="band-right">
+      <div class="seg" role="group" aria-label="ธีมการแสดงผล" id="theme">
+        <button type="button" data-t="auto">อัตโนมัติ</button><button type="button" data-t="light">สว่าง</button><button type="button" data-t="dark">มืด</button>
+      </div>
+      <span class="who" id="who" hidden></span>
+      <button type="button" class="btn-out" id="logout" hidden>ออกจากระบบ</button>
+    </div>
+  </div>
+</header>
+<div class="navbar"><nav class="tabs" id="tabs" aria-label="หน้ารายงาน"></nav></div>
+<div class="pagehead"><div><h1 id="ptitle">SAM Executive Snapshot</h1><p id="psub">SAM WATER SUPPLY</p></div><div class="status" id="status"></div></div>
+<div class="filterbar"><div class="filters" id="filters"></div></div>
+<main id="main" class="main"><div class="state">กำลังโหลดข้อมูล…</div></main>
+<footer class="foot" id="foot"></footer>
+<div class="modal" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-box" id="modal-box"></div></div>
+</div>
+<script src="metrics.js?v=mwhd0swb"></script>
+<script>window.DASH_STATIC = 1;</script>
+<script src="vendor/msal-browser.min.js?v=mwhd0swb"></script>
+<script src="auth-config.js?v=mwhd0swb"></script>
+<script src="data.enc.js?v=mwhd0swb"></script>
+<script src="app.js?v=mwhd0swb"></script>
+<script src="gate.js?v=mwhd0swb"></script>
+</body>
+</html>
