@@ -528,6 +528,20 @@
     try { main.innerHTML = fn(); } catch (e) { console.error(e); main.innerHTML = `<div class="state err">แสดงหน้านี้ไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
     main.querySelectorAll('[data-table]').forEach(el => mountTable(el, TB[+el.dataset.table]));
     document.title = 'SAM Executive Snapshot · ' + (PAGES.filter(p => p[0] === st.page)[0] || PAGES[0])[1];
+    if (anim !== false) countUp(main);
+  }
+  /* ตัวเลข KPI นับขึ้นจาก 0 ถึงค่าจริง (คงรูปแบบทศนิยม/คอมมาเดิม) — ค่าสุดท้ายคือข้อความเดิมทุกตัวอักษร */
+  function countUp(root) {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    root.querySelectorAll('.kpi .val').forEach(el => {
+      const tn = [...el.childNodes].find(n => n.nodeType === 3 && /\d/.test(n.nodeValue)); if (!tn) return;
+      const txt = tn.nodeValue, m = txt.match(/-?[\d,]+(\.\d+)?/); if (!m) return;
+      const target = parseFloat(m[0].replace(/,/g, '')), dec = m[1] ? m[1].length - 1 : 0, pre = txt.slice(0, m.index), post = txt.slice(m.index + m[0].length);
+      if (!isFinite(target) || !target) return;
+      const t0 = performance.now(), dur = 900, fmt = v => v.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+      const step = t => { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); tn.nodeValue = k < 1 ? pre + fmt(target * e) + post : txt; if (k < 1) requestAnimationFrame(step); };
+      tn.nodeValue = pre + fmt(0) + post; requestAnimationFrame(step);
+    });
   }
   document.addEventListener('click', e => { const t = e.target.closest('[data-drill]'); if (t) { e.preventDefault(); DR[+t.dataset.drill](); } else if (e.target.id === 'modal') closeModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('tr[data-drill], g[data-drill]')) { e.preventDefault(); DR[+e.target.dataset.drill](); } });

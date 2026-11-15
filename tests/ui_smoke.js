@@ -27,7 +27,7 @@ const { chromium } = require('playwright'), fs = require('fs'), srv = require('.
   await go('billing'); await p.fill('#main input[type=search]', 'RP-MA'); await p.waitForTimeout(300);
   ok(/รายการ/.test(await p.locator('#main .tools .note').last().innerText()), 'ค้นหาในตารางเอกสาร');
   await p.selectOption('#f-u', ''); await p.selectOption('#f-m', '2026-11');
-  await go('maint'); const wo = num((await p.locator('button.kpi .val').first().innerText()));
+  await go('maint'); await p.waitForTimeout(1000); const wo = num((await p.locator('button.kpi .val').first().innerText()));
   await p.locator('button.kpi').first().click(); await p.waitForTimeout(300);
   ok(+(await p.locator('#modal .tools .note').last().innerText()).replace(/[^\d]/g, '') === wo, 'จำนวนใบงานบนการ์ดเท่ากับรายการในรายละเอียด (' + wo + ')'); await p.keyboard.press('Escape');
   ok((await p.locator('#main').innerText()).includes('รอยืนยัน'), 'การจับคู่ใบงาน ↔ PO แสดงสถานะรอยืนยัน');
