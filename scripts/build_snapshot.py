@@ -388,13 +388,22 @@ def build():
         check('รหัสพื้นที่ในใบงานแจ้งซ่อมตรงกับรหัสพื้นที่ OM ใน area_mapping', not bad, 'ไม่พบรหัสที่ไม่รู้จัก' if not bad else 'ไม่รู้จัก: ' + ', '.join(bad))
     cp = os.path.join(DATA, 'contracts.json')
     contracts = json.load(open(cp, encoding='utf-8')) if os.path.exists(cp) else None
+    # งานและโครงการจาก ClickUp (scripts/ingest_clickup.py → scripts/import_clickup.py)
+    # เวลาที่ดึง ClickUp เก็บไว้ใน projects.meta แยกจาก fetched_from/to ของ TRCLOUD เพื่อไม่ให้เข้าใจว่าบัญชีอัปเดตพร้อมกัน
+    pj = os.path.join(DATA, 'projects.json')
+    projects = json.load(open(pj, encoding='utf-8')) if os.path.exists(pj) else None
+    if projects:
+        bad = [t['id'] for t in projects['tasks'] if t['parent'] and t['parent'] not in {x['id'] for x in projects['tasks']}]
+        check('งานย่อยจาก ClickUp ผูกกับงานหลักได้ครบ', not bad, 'ครบ %d รายการ' % len(projects['tasks']) if not bad else 'กำพร้า: ' + ', '.join(bad))
+        conf = [t['id'] for t in projects['tasks'] if (t.get('cls') or {}).get('state') == 'confirmed' and not (t['cls'].get('confirmed_by') and t['cls'].get('confirmed_on'))]
+        check('การจำแนกที่เป็น confirmed ต้องมีผู้ยืนยันและวันที่ยืนยัน', not conf, 'ผ่าน' if not conf else 'ขาดผู้ยืนยัน: ' + ', '.join(conf))
     if problems:
         print('ไม่เขียน snapshot — การตรวจสำคัญไม่ผ่าน:\n- ' + '\n- '.join(problems)); sys.exit(1)
     snap = {'meta': {'company': 'SAM WATER SUPPLY', 'mode': 'snapshot', 'asof': asof, 'tz': 'Asia/Bangkok',
                      'fetched_from': to_bkk(fetched[0]).isoformat(timespec='seconds'), 'fetched_to': to_bkk(fetched[-1]).isoformat(timespec='seconds'),
                      'period_from': '2026-01-01', 'period_to': asof, 'source': 'TRCLOUD MCP (บริษัท SAM) — อ่านอย่างเดียว ผ่าน session ของผู้ช่วย', 'built_at': datetime.datetime.now(BKK).isoformat(timespec='seconds'),
                      'datasets': datasets, 'checks': checks, 'limits': limits, 'settings': json.load(open(os.path.join(ROOT, 'config', 'settings.json'), encoding='utf-8')), 'money_unit': 'satang'},
-            'areas': areas, 'bl_lines': lines, 'bl_docs': docs, 'iv': ivs, 'recv': recv, 'pay': pay, 'po': pos, 'po_lines': po_lines, 'pl': pl, 'cost_groups': COST_GROUPS, 'coa': {k: v for k, v in coa.items() if any(l['acc'] == k for l in po_lines)}, 'om': om, 'maint': maint, 'contracts': contracts}
+            'areas': areas, 'bl_lines': lines, 'bl_docs': docs, 'iv': ivs, 'recv': recv, 'pay': pay, 'po': pos, 'po_lines': po_lines, 'pl': pl, 'cost_groups': COST_GROUPS, 'coa': {k: v for k, v in coa.items() if any(l['acc'] == k for l in po_lines)}, 'om': om, 'maint': maint, 'contracts': contracts, 'projects': projects}
     json.dump(snap, open(os.path.join(DATA, 'snapshot.json'), 'w', encoding='utf-8'), ensure_ascii=False)
     return snap
 

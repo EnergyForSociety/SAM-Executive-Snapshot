@@ -38,7 +38,8 @@ node scripts/build-static.js --key C:\mcp\keys\sam-dash-key.txt --out site
 | การเงิน `#/fin` | งบบริหาร (P&L) และต้นทุน | งบรายเดือนจาก `get_ledger` · กลุ่มที่ใช้วัดผลได้เทียบกลุ่มที่ถูกรายการปรับครอบ · สถานะรายเดือน · เอกสารรายการปรับ · ตารางรายบัญชี |
 | | ลูกหนี้และการรับชำระ | BL ที่ยังไม่รับชำระ · IV ค้างรับรอกระทบยอด · ยอดยกมาปี 2568 · อายุหนี้ · ความสัมพันธ์ BL → IV |
 | | เจ้าหนี้และภาระจัดซื้อ | ครบกำหนดแล้ว / 7 วัน / 30 วัน · ตามผู้ขาย พื้นที่ ประเภท · ภาระ PO แยกจากเจ้าหนี้ |
-| โครงการ `#/proj` | – | ยังไม่มีแหล่งข้อมูลโครงการและชั่วโมงทำงาน — ไม่คำนวณ Resource Utilization แทน |
+| โครงการ `#/proj` | ภาพรวมตามแผนธุรกิจ | งานจริงจาก **ClickUp** (SAM Space อ่านอย่างเดียว) · งานหลัก/งานย่อยนับแยกกัน · โครงการส่งมอบที่ยืนยันแล้ว · รายการที่ยังจัดประเภทแบบข้อเสนอ · งานเกินกำหนด/ไม่มีกำหนดส่ง · ตารางลำดับชั้นขยาย-ย่อ · ประเด็นที่ต้องดำเนินการพร้อม Task ID และลิงก์ ClickUp · ภาระงานตามจำนวนรายการ (**ไม่ใช่** Resource Utilization) |
+| | แผนงานตามแผนธุรกิจ 6 แผน (CPF · New Business · Reject water · Sales · UF membrane · leasing/leasehold) | หนึ่ง List ใน ClickUp = หนึ่งแผนงาน · เหตุผลการจัดประเภทและสิ่งที่ต้องยืนยันรายงาน · งานและงานย่อยของแผนนั้น |
 | กลยุทธ์ `#/strat` | – | การเติบโตของยอดเรียกเก็บและปริมาณน้ำ · โครงสร้างรายได้ตามเฟส · แนวโน้มรายเดือน · การเติบโตตามประเภทบริการ · อันดับพื้นที่สะสม (ไม่มี CLV) |
 | ปฏิบัติการ `#/ops` | การผลิตและสารเคมี | ปริมาณน้ำรับจริง เทียบสัญญา / แผน CP / แผนธุรกิจ / ปีก่อน รายพื้นที่ (ไฟล์ OM) · PO สารเคมีรายเดือน และบาท/ลบ.ม. รายพื้นที่ |
 | | Maintenance Snapshot | ใบงานแจ้งซ่อม (SLA ค้าง เสียซ้ำ อาการ/วิธีซ่อม) · PO ซ่อมบำรุง/สินทรัพย์ · จับคู่ใบงาน↔PO ที่เป็นไปได้ (รอยืนยัน) |
@@ -60,6 +61,9 @@ web/app.js, index.html, styles.css   5) Dashboard UI
 scripts/import_om.py         นำเข้า Excel ของ OM → data/om.json (+ประวัติ revision)
 scripts/import_maintenance.py นำเข้า Excel ใบงานแจ้งซ่อม → data/maintenance.json (มีชื่อผู้แจ้งซ่อมและผู้รับผิดชอบตามไฟล์ต้นฉบับ)
 scripts/import_contracts.py  นำเข้าทะเบียนสัญญา (CSV) → data/contracts.json
+scripts/ingest_clickup.py    Source adapter ของ ClickUp — เก็บ response ดิบ (อ่านอย่างเดียว) → raw/clickup/ + _manifest.json
+scripts/import_clickup.py    ClickUp → data/projects.json (dedupe ด้วย Task ID · ผูก parent-child · ชั้นจำแนกประเภท · ธงประเด็น)
+config/project_classification.csv  ชั้นจำแนกงานของ Dashboard (type · proposed/confirmed · เหตุผล · หลักฐาน · ผู้ยืนยัน) — ไม่แก้ ClickUp ต้นทาง
 config/area_mapping.json     department ↔ รหัสพื้นที่ OM ↔ เฟส
 config/settings.json         เกณฑ์เตือนภายใน (แยกจากกำหนดตามสัญญา)
 config/pl_mapping.json       การจัดกลุ่มงบบริหารจาก Ledger ตามหัวบัญชี (ฝ่ายบัญชีแก้ไฟล์นี้แล้ว build ใหม่)
@@ -83,6 +87,14 @@ tests/                       ชุดทดสอบ
 ใบงานแจ้งซ่อม: `python3 scripts/import_maintenance.py om/<ไฟล์>.xlsx` แล้วรันข้อ 3
 ทะเบียนสัญญา: กรอก `templates/contracts.csv` → `python3 scripts/import_contracts.py <ไฟล์>` แล้วรันข้อ 3
 
+**งานและโครงการ (ClickUp)** — เส้นทางเดียวกับ TRCLOUD คือดึงใน session ของผู้ช่วยแล้วเก็บเป็นไฟล์ (เว็บบน GitHub Pages เรียก MCP เองไม่ได้):
+
+1. ใน session ที่เชื่อม ClickUp MCP ให้ดึง **เฉพาะเครื่องมืออ่าน**: `get_user` (เอาเวลาและ timezone) · `get_workspace_hierarchy` (space `901811856729`) · `filter_tasks` (space เดียวกัน `include_closed: true`, `subtasks: true`, ดึงจนกว่า `has_more` = false) · `get_task` ของงานหลักทุกตัวพร้อม `include: ["description","subtasks"]` · `get_custom_fields` · `get_time_entries`
+2. `python3 scripts/ingest_clickup.py <transcript.jsonl>` → `raw/clickup/` (สคริปต์หยุดทันทีถ้าพบการเรียกเครื่องมือที่เขียน/แก้ ClickUp)
+3. `python3 scripts/import_clickup.py` → `data/projects.json` (ไม่เขียนไฟล์ถ้าการตรวจไม่ผ่าน เช่น งานย่อยกำพร้า งานหลักที่ยังไม่จัดประเภท หรือ `filter_tasks` ยังมีหน้าต่อ)
+4. ถ้ามีงานหลักใหม่ สคริปต์จะฟ้องว่ายังไม่จัดประเภท — เพิ่มแถวใน `config/project_classification.csv` เป็น `proposed` พร้อมเหตุผลและหลักฐาน **ห้ามใส่ `confirmed` เอง** (ต้องมี `confirmed_by` + `confirmed_on` จากผู้รับผิดชอบ)
+5. รันข้อ 3 ของหัวข้อด้านบน (`build_snapshot.py`) แล้ว build เว็บตามปกติ — เวลาที่ดึง ClickUp เก็บแยกจากเวลาที่ดึง TRCLOUD และแสดงแยกกันบนหน้าเว็บ
+
 ### ถ้าต้องการเชื่อมต่อสด (ยังไม่ได้ทำ)
 ต้องเพิ่ม (ก) สิทธิ์ API ของ TRCLOUD สำหรับ user อ่านอย่างเดียวของ SAM ที่เรียกจากเครื่องเซิร์ฟเวอร์ได้ (ข) adapter ที่เขียนไฟล์ `raw/*.json` + `raw/_manifest.json` รูปแบบเดียวกับ `ingest_session.py` (ค) ที่เก็บ credential นอก source code เช่น environment variable — ชั้น 3–5 ใช้ต่อได้โดยไม่ต้องแก้
 
@@ -91,7 +103,7 @@ tests/                       ชุดทดสอบ
 ```
 python3 -m pytest tests/test_pipeline.py -q   # normalization, ปัดเศษ, ช่วงให้บริการ, WHT, ซ้ำ, ทะเบียนสัญญา
 node --test tests/metrics.test.js             # BL/IV ไม่ซ้ำ, รายการหัก, อายุหนี้, MTD, ข้อมูลขาด, ตัวกรอง, CSV
-node tests/ui_smoke.js <โฟลเดอร์ภาพ>           # ตรวจหน้าจอจริง: 7 หมวด หน้าย่อย ลิงก์เดิม ธีม 3 โหมด (ต้องมี Playwright)
+node tests/ui_smoke.js <โฟลเดอร์ภาพ>           # ตรวจหน้าจอจริง: 7 หมวด หน้าย่อย ลิงก์เดิม ธีม 3 โหมด + หน้าโครงการจาก ClickUp (ต้องมี Playwright)
 node tests/gate_test.js site <กุญแจ>          # จำลอง Microsoft 365: login, สิทธิ์กลุ่ม, กุญแจผิด, ออกจากระบบ
 ```
 

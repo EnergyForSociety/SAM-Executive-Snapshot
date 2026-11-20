@@ -10,6 +10,8 @@ keys/
 .env.*
 config/area_mapping.json
 config/pl_mapping.json
+# ชั้นจำแนกงาน: มีชื่อ/เหตุผล/หลักฐานของงานจริงใน ClickUp — เก็บบนเครื่องเท่านั้น
+config/project_classification.csv
 # เอกสารส่งมอบทั้งหมดมีตัวเลขจริง รหัสบัญชี และเลขเอกสาร — เก็บไว้ในโฟลเดอร์โครงการบนเครื่องเท่านั้น
 docs/
 # อื่น ๆ

@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   const M = window.SAMM, $ = (s, r) => (r || document).querySelector(s);
-  let S = null, st = { page: 'exec', ym: null, unit: '', sub: {} }, DR = [], TB = [];
+  let S = null, st = { page: 'exec', ym: null, unit: '', sub: {}, pj: null }, DR = [], TB = [], MT = [];
   const TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   /* โครงเมนูตามกรอบผู้บริหาร: Executive · การขาย · การเงิน · โครงการ · กลยุทธ์ · ปฏิบัติการ · สถานะข้อมูล
      หน้าย่อย (sub) คือหน้าเดิมที่ย้ายเข้ามาเป็นระดับรายละเอียด — สูตร ตัวกรอง และการส่งออก CSV เหมือนเดิมทุกจุด */
@@ -11,7 +11,9 @@
   const SUBS = {
     sales: [['billing', 'ยอดเรียกเก็บและพื้นที่'], ['crm', 'ลูกค้าใหม่และโอกาสขาย']],
     fin: [['pl', 'งบบริหาร (P&L) และต้นทุน'], ['recv', 'ลูกหนี้และการรับชำระ'], ['pay', 'เจ้าหนี้และภาระจัดซื้อ']],
-    ops: [['prod', 'การผลิตและสารเคมี'], ['maint', 'Maintenance Snapshot']]
+    ops: [['prod', 'การผลิตและสารเคมี'], ['maint', 'Maintenance Snapshot']],
+    /* หน้าโครงการ: ภาพรวม + หนึ่งมุมมองต่อหนึ่งแผนงานตามแผนธุรกิจ — รายการจริงสร้างใน start() จาก List ใน ClickUp */
+    proj: [['all', 'ภาพรวมตามแผนธุรกิจ']]
   };
   const subOf = p => { const l = SUBS[p]; if (!l) return null; const v = st.sub[p]; return l.some(x => x[0] === v) ? v : l[0][0]; };
   const segTabs = p => { const l = SUBS[p], cur = subOf(p); return `<div class="seg subseg no-print" role="tablist" aria-label="หน้าย่อย">${l.map(x => `<button role="tab" aria-pressed="${x[0] === cur}" ${drill(() => { st.sub[p] = x[0]; render(false); window.scrollTo(0, 0); })}>${esc(x[1])}</button>`).join('')}</div>`; };
@@ -29,6 +31,8 @@
   const delta = (p, label) => p === null || !isFinite(p) ? `<span class="delta na">เทียบไม่ได้ (N/A) ${esc(label || '')}</span>` : `<span class="delta ${p >= 0 ? 'up' : 'down'}">${p >= 0 ? '▲' : '▼'} ${nf(Math.abs(p), 1)}% ${esc(label || '')}</span>`;
   const drill = fn => { DR.push(fn); return `data-drill="${DR.length - 1}"`; };
   const tableSlot = spec => { TB.push(spec); return `<div data-table="${TB.length - 1}"></div>`; };
+  /* ช่องที่คอมโพเนนต์ดูแลตัวเอง (วาดซ้ำเฉพาะในช่องนั้น ไม่ต้อง render หน้าใหม่ทั้งหน้า) */
+  const mountSlot = fn => { MT.push(fn); return `<div data-mount="${MT.length - 1}"></div>`; };
   const areas = () => M.areaIndex(S);
   const selTo = () => { const e = M.monthEnd(st.ym); return e > S.meta.asof ? S.meta.asof : e; };
   const F = extra => Object.assign({ unit: st.unit }, extra || {});
@@ -328,7 +332,9 @@
     g.push({ t: 'เงินสดและกระแสเงินสด', why: 'API งบกระแสเงินสด/งบดุลต้องใช้แพ็กเกจ Datawarehouse — ยอดในทะเบียนธนาคารไม่ใช่เงินสดที่ตรวจยืนยันได้ จึงไม่นำมาแสดง · รอ statement ธนาคารจากฝ่ายการเงิน', go: goPage('data'), lab: 'ดูข้อจำกัด' });
     g.push({ t: 'ลูกค้าใหม่และโอกาสขาย (Pipeline)', why: 'ไม่มีข้อมูล lead/quotation ของ SAM ใน TRCLOUD — ยังไม่มีแหล่งข้อมูล CRM/BD', go: goSub('sales', 'crm'), lab: 'ดูหน้า CRM/BD' });
     g.push({ t: 'ต้นทุนต่อหน่วยน้ำ (บาท/ลบ.ม.)', why: 'มีเฉพาะต้นทุนสารเคมีตามมูลค่า PO ÷ ปริมาณน้ำตามไฟล์ OM — ยังไม่มีการเบิกใช้จริงและต้นทุนรวมรายพื้นที่ จึงยังไม่ใช่ต้นทุนต่อหน่วยที่สมบูรณ์', go: goSub('ops', 'prod'), lab: 'ดูการผลิตและสารเคมี' });
-    g.push({ t: 'โครงการและ Resource Utilization', why: 'ไม่มีข้อมูลโครงการและชั่วโมงทำงานจริงในแหล่งที่เข้าถึงได้', go: goPage('proj'), lab: 'ดูหน้าโครงการ' });
+    g.push(S.projects
+      ? { t: 'ความคืบหน้าโครงการที่ยืนยันแล้ว และ Resource Utilization', why: 'หน้าโครงการแสดงงานจริงจาก ClickUp แล้ว (งานหลัก ' + nf(S.projects.tasks.filter(t => !t.parent).length) + ' รายการ) แต่ประเภทงานทุกรายการยังเป็นข้อเสนอรอผู้รับผิดชอบยืนยัน · ไม่มีเปอร์เซ็นต์ความคืบหน้าที่ผู้ควบคุมงานยืนยัน และไม่มีชั่วโมงทำงานจริง จึงไม่คำนวณ Physical Progress หรือ Utilization', go: goPage('proj'), lab: 'ดูหน้าโครงการ' }
+      : { t: 'โครงการและ Resource Utilization', why: 'ไม่มีข้อมูลโครงการและชั่วโมงทำงานจริงในแหล่งที่เข้าถึงได้', go: goPage('proj'), lab: 'ดูหน้าโครงการ' });
     return `<section class="card"><div class="head"><div><h2>KPI ที่ยังแสดงไม่ได้ และเหตุผล</h2><p class="sub">ตามกรอบผู้บริหาร KPI เหล่านี้ต้องมีข้อมูลที่ตรวจยืนยันได้ก่อน — ไม่แสดงเป็นศูนย์หรือค่าประมาณ</p></div></div>
       <div class="tbl-wrap"><table><thead><tr><th>KPI</th><th>เหตุผลที่ยังแสดงไม่ได้</th><th>ดูต่อ</th></tr></thead><tbody>
       ${g.map(x => `<tr><td style="white-space:nowrap"><b style="font-weight:600;color:var(--navy)">${esc(x.t)}</b></td><td>${esc(x.why)}</td><td><button class="link" ${drill(x.go)}>${esc(x.lab)}</button></td></tr>`).join('')}
@@ -502,19 +508,295 @@
       <p class="note" style="margin-top:10px">เมื่อได้ข้อมูลแล้วจะต่อเข้าหน้านี้โดยไม่เปลี่ยนโครงระบบ — ยอดเรียกเก็บปัจจุบันอยู่ในหน้าย่อย “ยอดเรียกเก็บและพื้นที่”</p></section>`;
   }
 
-  /* ---------- โครงการ ---------- */
+  /* ---------- โครงการ: งานจาก ClickUp (SAM Space) + ชั้นจำแนกของ Dashboard ----------
+     กฎที่หน้านี้ยึด: ไม่ถือว่าทุก Task คือโครงการ · งานหลักกับงานย่อยนับแยกกัน · cancelled/on hold ไม่ใช่กำลังทำงาน ·
+     สัดส่วนงานย่อยไม่ใช่ Physical Progress · ไม่คำนวณ Resource Utilization · ทุกประเด็นอ้าง Task ID และเปิด ClickUp ได้ */
+  const PJT = {
+    delivery_project: { name: 'โครงการส่งมอบ', desc: 'มีขอบเขตและผลส่งมอบชัด', c: 'navy' },
+    improvement_initiative: { name: 'งานพัฒนาและแก้ปัญหา', desc: 'ปรับปรุงกระบวนการหรือแก้ปัญหาหน้างาน', c: 'sky' },
+    feasibility_opportunity: { name: 'งานศึกษาและโอกาสธุรกิจ', desc: 'ศึกษา/Pilot ที่ยังไม่อนุมัติเป็นงานส่งมอบ', c: 'sky' },
+    commercial_contract: { name: 'งานเชิงพาณิชย์/สัญญา', desc: 'เจรจา ซื้อคืน ต่อสัญญา', c: 'navy' },
+    recurring_operation: { name: 'งานประจำ', desc: 'เป้าหมายการดำเนินงานต่อเนื่อง', c: '' },
+    needs_review: { name: 'รอจำแนก', desc: 'ข้อมูลไม่พอตัดสินประเภท', c: 'warn' },
+  };
+  const PJG = {
+    active: { name: 'กำลังดำเนินการ', tag: 'fact' }, done: { name: 'เสร็จแล้ว', tag: '' },
+    notstarted: { name: 'ยังไม่เริ่ม', tag: 'none' }, hold: { name: 'พักไว้', tag: 'wait' }, cancelled: { name: 'ยกเลิก', tag: 'sev' },
+  };
+  const PJI = {   /* ป้ายของประเด็นแต่ละชนิด */
+    overdue: 'เกินกำหนด', nodue: 'ไม่มีกำหนดส่ง', afterparent: 'กำหนดการไม่สอดคล้อง', stale: 'ไม่อัปเดตนาน',
+    donewithopen: 'ปิดงานหลักแต่งานย่อยค้าง', kidsdone: 'งานย่อยเสร็จครบแต่งานหลักยังไม่ปิด', needsreview: 'รอจำแนกประเภท',
+    recurdone: 'งานประจำที่ต้องยืนยันรอบล่าสุด', nodesc: 'ไม่มีผลส่งมอบให้ตรวจ', noclosed: 'complete แต่ไม่มีวันที่ปิดงาน',
+  };
+  const pjState = () => (st.pj = st.pj || { q: '', type: '', status: '', list: '', asg: '', flag: '', open: {} });
+  const pjLink = t => `<a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer" class="pj-id">${esc(t.id)} ↗</a>`;
+  const pjType = t => (t.cls || {}).type ? PJT[t.cls.type] : null;
+  const pjTypeTag = t => {
+    const c = t.cls; if (!c) return '';
+    const st2 = c.state === 'confirmed' ? `<span class="tag fact">ยืนยันแล้ว</span>` : `<span class="tag wait">ข้อเสนอ (proposed)</span>`;
+    return `<span class="tag">${esc(PJT[c.type].name)}</span> ${st2}`;
+  };
+  const pjDue = t => t.due ? thDs(t.due) : NA('ไม่ระบุ');
+  const pjAsg = t => t.assignees.length ? esc(t.assignees.join(', ')) : NA('ไม่ระบุ');
+  const pjKid = t => t.kid_total == null ? NA('N/A — ไม่มีงานย่อย') : `${t.kid_done}/${t.kid_total}`;
+  const pjActions = t => t.issues.filter(i => i.sev === 'action');
+
   function pProj() {
-    const need = [['รายชื่อโครงการและสถานะ', 'ทะเบียนโครงการ (ชื่อ เจ้าของงาน มูลค่า วันเริ่ม-สิ้นสุด สถานะ) — ไม่พบ project ในข้อมูลที่เข้าถึงได้'],
+    const P = S.projects;
+    if (!P) return pProjEmpty();
+    const v = subOf('proj'), tasks = P.tasks, mains = tasks.filter(t => !t.parent), subs = tasks.filter(t => t.parent);
+    const m = P.meta, src = `<div class="empty note-top" style="border-style:solid">งานทั้งหมดมาจาก <b>ClickUp</b> (Workspace ${esc(m.workspace_id)} · SAM Space ${esc(m.space_id)}) อ่านอย่างเดียว ดึงเมื่อ ${thT(m.fetched_to)} — <b>คนละเวลากับข้อมูลบัญชี TRCLOUD</b> (${thT(S.meta.fetched_to)}) การอัปเดตหน้านี้ไม่ได้แปลว่าตัวเลขบัญชีอัปเดตด้วย · วันที่และงานเกินกำหนดคิดตามเวลา ${esc(m.tz)} จากผู้ใช้ ClickUp (วันอ้างอิง ${thD(m.today)}) · <b>ประเภทงานเป็นชั้นจำแนกของ Dashboard</b> ใน <code>config/project_classification.csv</code> ไม่ได้แก้ ClickUp ต้นทาง และทุกรายการยังเป็นข้อเสนอจนผู้รับผิดชอบยืนยัน</div>`;
+    return (v === 'all' ? pjOverview(P, mains, subs) : pjPlanView(P, v, mains)) + src;
+  }
+
+  /* ภาพรวมงานสำคัญ */
+  function pjOverview(P, mains, subs) {
+    const m = P.meta, conf = mains.filter(t => (t.cls || {}).state === 'confirmed'), prop = mains.filter(t => (t.cls || {}).state === 'proposed');
+    const deliv = mains.filter(t => (t.cls || {}).type === 'delivery_project'), delivConf = deliv.filter(t => t.cls.state === 'confirmed');
+    const act = mains.filter(t => t.group === 'active'), od = P.tasks.filter(t => t.issues.some(i => i.k === 'overdue'));
+    const odM = od.filter(t => !t.parent), nodue = mains.filter(t => t.issues.some(i => i.k === 'nodue'));
+    const g = k => mains.filter(t => t.group === k).length;
+    const kpi = (cls, lab, val, unit, full, open) => `<button class="card accent ${cls} kpi" ${drill(open)}><span class="lab">${lab}</span><span class="val num">${val}${unit ? ` <small>${unit}</small>` : ''}</span><span class="full">${full}</span><span class="more">ดูรายการ →</span></button>`;
+    const tbl = (title, rows, sub) => () => openTable(pjTable(title, rows, sub));
+    const byType = Object.keys(PJT).map(k => ({ k, n: mains.filter(t => (t.cls || {}).type === k).length }));
+    const byList = (m.lists || []).map(l => ({ l, n: mains.filter(t => t.list_id === l.id).length, s: subs.filter(t => t.list_id === l.id).length }));
+    const asg = {};
+    P.tasks.forEach(t => { if (t.group === 'cancelled' || t.group === 'done') return; (t.assignees.length ? t.assignees : ['(ไม่ระบุผู้รับผิดชอบ)']).forEach(a => { const x = asg[a] = asg[a] || { a, main: 0, sub: 0 }; t.parent ? x.sub++ : x.main++; }); });
+    const asgRows = Object.values(asg).sort((a, b) => (b.main + b.sub) - (a.main + a.sub)), amax = Math.max(1, ...asgRows.map(r => r.main + r.sub));
+    const acts = P.tasks.filter(t => pjActions(t).length);
+    return `<div class="grid g3">
+      ${kpi('navy', 'งานหลักทั้งหมดใน ClickUp', nf(mains.length), 'รายการ', `งานย่อยอีก ${nf(subs.length)} รายการนับแยก ไม่ถือเป็นโครงการ · รวมทุกรายการในพื้นที่ ${nf(P.tasks.length)}`, tbl('งานหลักทั้งหมด', mains, 'parent = null · ไม่ใช่ทุกรายการคือโครงการ'))}
+      ${kpi(delivConf.length ? 'navy' : 'warn', 'โครงการส่งมอบที่ยืนยันแล้ว', delivConf.length ? nf(delivConf.length) : 'ยังไม่ยืนยัน', delivConf.length ? 'โครงการ' : '', `มีข้อเสนอเป็นโครงการส่งมอบ ${nf(deliv.length)} รายการ รอผู้รับผิดชอบยืนยันขอบเขตและเกณฑ์ตรวจรับ — <b>ไม่ได้แปลว่าบริษัทไม่มีโครงการ</b>`, tbl('งานที่เสนอเป็นโครงการส่งมอบ', deliv, 'ยังไม่ยืนยัน — ต้องยืนยันขอบเขตและผลส่งมอบก่อน'))}
+      ${kpi('warn', 'รายการที่ยังจัดประเภทแบบข้อเสนอ', nf(prop.length), 'จาก ' + nf(mains.length), `ยืนยันแล้ว ${nf(conf.length)} รายการ · การยืนยันทำที่ <code>config/project_classification.csv</code> (ต้องมีผู้ยืนยันและวันที่)`, tbl('งานหลักที่ยังเป็นข้อเสนอ', prop, 'state = proposed'))}
+      ${kpi('sky', 'งานหลักกำลังดำเนินการ', nf(act.length), 'รายการ', `เสร็จ ${g('done')} · ยังไม่เริ่ม ${g('notstarted')} · พักไว้ ${g('hold')} · ยกเลิก ${g('cancelled')} — พักไว้และยกเลิกไม่นับว่ากำลังทำงาน`, tbl('งานหลักกำลังดำเนินการ', act, 'status = in progress'))}
+      ${kpi(od.length ? 'warn' : '', 'งานเกินกำหนด', nf(od.length), 'รายการ', od.length ? `งานหลัก ${nf(odM.length)} · งานย่อย ${nf(od.length - odM.length)} — เทียบกำหนดส่งกับ ${thD(m.today)}` : `ไม่มีงานที่เลยกำหนดและยังไม่ปิด ณ ${thD(m.today)} · งานที่ไม่มีกำหนดส่งไม่ถูกนับรวม`, tbl('งานเกินกำหนด', od, 'เลยกำหนดและยังไม่ complete/cancelled'))}
+      ${kpi(nodue.length ? 'warn' : '', 'งานหลักที่ไม่มีกำหนดส่ง', nf(nodue.length), 'รายการ', `นับเฉพาะงานที่ยังไม่ปิด · งานย่อยที่ไม่มีกำหนดส่ง ${nf(subs.filter(t => t.issues.some(i => i.k === 'nodue')).length)} รายการ`, tbl('งานที่ไม่มีกำหนดส่ง', P.tasks.filter(t => t.issues.some(i => i.k === 'nodue')), 'due_date ว่าง และยังไม่ปิดงาน'))}
+    </div>
+    <div class="grid g2" style="margin-top:16px">
+      <section class="card"><div class="head"><div><h2>งานหลักตามประเภท</h2><p class="sub">ชั้นจำแนกของ Dashboard · ทุกรายการยังเป็นข้อเสนอ</p></div></div>
+        ${bars(byType.map(x => ({ label: PJT[x.k].name, v: x.n, txt: nf(x.n), drill: () => openTable(pjTable(PJT[x.k].name, mains.filter(t => (t.cls || {}).type === x.k), PJT[x.k].desc)) })), Math.max(1, ...byType.map(x => x.n)))}
+        <p class="note">กดแถบเพื่อดูรายการของประเภทนั้น (กรองในตารางด้านล่างได้ด้วยช่อง “ประเภท”) · การไม่มี parent ไม่ได้ทำให้เป็นโครงการ และคำว่า “โครงการ” ในชื่อก็ไม่เพียงพอ</p></section>
+      <section class="card"><div class="head"><div><h2>แผนงานตามแผนธุรกิจ</h2><p class="sub">หนึ่ง List ใน ClickUp = หนึ่งแผนงาน · กดเพื่อเปิดแผนงานนั้น</p></div></div>
+        ${bars(byList.map(x => ({ label: x.l.name || x.l.id, v: x.n + x.s, txt: `${nf(x.n)} + ${nf(x.s)} ย่อย`, drill: () => { st.sub.proj = x.l.id; render(false); window.scrollTo(0, 0); } })), Math.max(1, ...byList.map(x => x.n + x.s)))}
+        <p class="note">ตัวเลขหน้าแถบคืองานหลักในแผนนั้น ตามด้วยงานย่อย — งานย่อยไม่ถูกนับเป็นโครงการใหม่</p></section>
+    </div>
+    <section class="card" style="margin-top:16px"><div class="head"><div><h2>งานหลักและงานย่อยทั้งหมด</h2><p class="sub">กดชื่องานเพื่อดูรายละเอียดและงานย่อย · ค้นหาและกรองได้ · ส่งออก CSV</p></div></div>
+      ${mountSlot(el => pjTree(el, P))}</section>
+    <section class="card" style="margin-top:16px"><div class="head"><div><h2>ประเด็นที่ต้องดำเนินการ</h2><p class="sub">จากข้อมูลจริงใน ClickUp · ทุกข้อมี Task ID และวันที่อ้างอิง</p></div></div>
+      ${pjIssues(P)}
+      <p class="note">หน้านี้ไม่ให้คะแนนความเสี่ยงและไม่สรุปว่าใครทำงานช้า — วันที่อัปเดตบอกได้เพียงว่าไม่มีการบันทึกใน ClickUp ไม่ได้บอกว่างานไม่เดิน</p></section>
+    <div class="grid g2" style="margin-top:16px">
+      <section class="card"><div class="head"><div><h2>ภาระงานตามจำนวนรายการ</h2><p class="sub">นับงานที่ยังไม่ปิดต่อผู้รับผิดชอบ</p></div></div>
+        ${asgRows.length ? bars(asgRows.map(r => ({ label: r.a, v: r.main + r.sub, txt: `${nf(r.main)} หลัก + ${nf(r.sub)} ย่อย`, drill: () => openTable(pjTable('งานของ ' + r.a, P.tasks.filter(t => t.group !== 'done' && t.group !== 'cancelled' && (t.assignees.length ? t.assignees : ['(ไม่ระบุผู้รับผิดชอบ)']).indexOf(r.a) >= 0), 'งานที่ยังไม่ปิด')) })), amax) : '<div class="empty">ไม่มีงานที่ยังไม่ปิด</div>'}
+        <div class="state warn" style="margin-top:12px"><b>ไม่ใช่อัตราการใช้กำลังคน</b> — งานใน SAM Space ไม่มี Time Estimate (${nf(m.time_evidence.tasks_with_estimate)} รายการ) และไม่มี Time Spent (${nf(m.time_evidence.tasks_with_time_spent)} รายการ) · ช่วง ${esc(m.time_evidence.window.from || '–')} ถึง ${esc(m.time_evidence.window.to || '–')} ไม่พบ time entry ของงานในพื้นที่นี้ (ทั้ง Workspace มี ${nf(m.time_evidence.time_entries_workspace)} รายการ แต่เป็นงานของพื้นที่อื่น) จึงไม่คำนวณ Resource Utilization ชั่วโมงแรงงาน หรือต้นทุนแรงงานจากจำนวนผู้รับผิดชอบหรืออายุงาน</div></section>
+      <section class="card"><div class="head"><div><h2>ความคืบหน้าที่แสดงได้และที่ยังแสดงไม่ได้</h2><p class="sub">แยกสถานะงาน · สัดส่วนงานย่อย · ความคืบหน้าที่ยืนยัน</p></div></div>
+        <div class="tbl-wrap"><table><thead><tr><th>ชั้นข้อมูล</th><th>สถานะ</th><th>ที่มา/สูตร</th></tr></thead><tbody>
+          <tr><td>สถานะงานหลักจาก ClickUp</td><td><span class="tag fact">ใช้ได้</span></td><td>ชื่อสถานะในระบบ (${esc(Object.entries(m.counts.by_status).map(([k, n]) => k + ' ' + n).join(' · '))}) — ไม่ใช้ date_closed ตัดสิน เพราะมีงาน complete ที่ไม่มีวันที่ปิด ${nf(P.tasks.filter(t => t.issues.some(i => i.k === 'noclosed')).length)} รายการ</td></tr>
+          <tr><td>สัดส่วนงานย่อยที่ปิดแล้ว</td><td><span class="tag fact">ใช้ได้</span></td><td>งานย่อยที่สถานะ complete ÷ งานย่อยทั้งหมดของงานนั้น <b>ไม่รวมงานย่อยที่ยกเลิก</b> (ตัดออก ${nf(M.sum(P.tasks, t => t.kid_cancelled || 0))} รายการ) · งานหลักไม่ถูกนับรวมในตัวหารของตัวเอง · ไม่มีงานย่อย = N/A ไม่ใช่ 0%</td></tr>
+          <tr><td>เปอร์เซ็นต์ความคืบหน้าที่ผู้ควบคุมงานยืนยัน</td><td><span class="tag wait">รอข้อมูล</span></td><td>ClickUp ไม่มีช่องนี้ และ Custom field ใน Space มีเพียง ${esc((m.custom_fields || []).map(f => f.name).join(', ') || 'ไม่มี')} ซึ่งไม่มีค่าในงานที่ดึงได้ — <b>จึงไม่ใช้สัดส่วนงานย่อยเป็น Physical Progress หรือมูลค่างานสำเร็จ</b></td></tr>
+          <tr><td>งบประมาณและต้นทุนจริงรายโครงการ</td><td><span class="tag wait">รอข้อมูล</span></td><td>ต้องมี mapping รหัสโครงการ ↔ เอกสาร TRCLOUD ที่ยืนยันแล้ว — ไม่ผูกด้วยชื่อที่คล้ายกันเพียงอย่างเดียว</td></tr>
+        </tbody></table></div></section>
+    </div>
+    ${pjDupes(P)}
+    <section class="card" style="margin-top:16px"><div class="head"><div><h2>การตรวจข้อมูลและข้อจำกัด</h2><p class="sub">ผลตรวจอัตโนมัติตอนนำเข้า ClickUp</p></div></div>
+      <div class="tbl-wrap"><table><thead><tr><th>รายการตรวจ</th><th>ผล</th><th>รายละเอียด</th></tr></thead><tbody>
+      ${(m.checks || []).map(c => `<tr><td>${esc(c.name)}</td><td>${c.ok ? '<span class="tag fact">ผ่าน</span>' : '<span class="tag sev">ไม่ผ่าน</span>'}</td><td>${esc(c.detail)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="tbl-wrap" style="margin-top:14px"><table><thead><tr><th>หัวข้อ</th><th>ข้อจำกัด</th></tr></thead><tbody>
+      ${(m.limits || []).map(l => `<tr><td style="white-space:nowrap"><b style="font-weight:600;color:var(--navy)">${esc(l.topic)}</b></td><td>${esc(l.detail)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="note" style="margin-top:10px">อัปเดตข้อมูลหน้านี้: ให้ผู้ช่วยดึง ClickUp ด้วยเครื่องมืออ่านอย่างเดียว แล้วรัน <code>python3 scripts/ingest_clickup.py &lt;transcript&gt;</code> → <code>python3 scripts/import_clickup.py</code> → <code>python3 scripts/build_snapshot.py</code> → <code>node scripts/build-static.js --key &lt;กุญแจ&gt;</code> · ดึงล่าสุด ${thT(m.fetched_from)} – ${thT(m.fetched_to)} จาก ${nf((m.calls || []).length)} คำขอ</p></section>`;
+  }
+
+  /* มุมมองรายแผนงานตามแผนธุรกิจ (หนึ่ง List = หนึ่งแผนงาน) */
+  function pjPlanView(P, listId, mains) {
+    const L = (P.meta.lists || []).filter(l => l.id === listId)[0] || { id: listId, name: listId };
+    const rows = mains.filter(t => t.list_id === listId);
+    const kids = id => P.tasks.filter(t => t.parent === id);
+    if (!rows.length) return `<div class="state">แผนงาน “${esc(L.name)}” ยังไม่มีงานหลักใน ClickUp — ไม่ได้แปลว่าไม่มีงานตามแผน ตรวจที่ List นี้ใน ClickUp</div>`;
+    const g = k => rows.filter(t => t.group === k).length;
+    const tys = Object.keys(PJT).map(k => ({ k, n: rows.filter(t => (t.cls || {}).type === k).length })).filter(x => x.n);
+    return `<div class="grid g3">
+      <div class="card accent navy mini"><h3>แผนงาน: ${esc(L.name)}</h3>
+        <div class="row"><span>งานหลักในแผนนี้</span><b class="num">${nf(rows.length)} รายการ</b></div>
+        <div class="row"><span>งานย่อยใต้งานเหล่านี้</span><b class="num">${nf(M.sum(rows, t => kids(t.id).length))} รายการ</b></div>
+        <div class="row"><span>ยืนยันประเภทแล้ว</span><b class="num">${nf(rows.filter(t => (t.cls || {}).state === 'confirmed').length)} / ${nf(rows.length)}</b></div>
+        <p class="note">ประเภทในแผนนี้: ${tys.map(x => esc(PJT[x.k].name) + ' ' + x.n).join(' · ') || '–'}</p></div>
+      <div class="card accent sky mini"><h3>สถานะใน ClickUp</h3>
+        <div class="row"><span>กำลังดำเนินการ</span><b class="num">${nf(g('active'))}</b></div>
+        <div class="row"><span>เสร็จแล้ว</span><b class="num">${nf(g('done'))}</b></div>
+        <div class="row"><span>ยังไม่เริ่ม / พักไว้ / ยกเลิก</span><b class="num">${nf(g('notstarted'))} / ${nf(g('hold'))} / ${nf(g('cancelled'))}</b></div>
+        <p class="note">พักไว้และยกเลิกแสดงแยก ไม่ตีความว่ากำลังทำงานตามปกติ</p></div>
+      <div class="card accent warn mini"><h3>ประเด็นที่ต้องดำเนินการ</h3>
+        <div class="row"><span>งานที่มีประเด็น</span><b class="num">${nf(rows.filter(t => pjActions(t).length).length)} / ${nf(rows.length)}</b></div>
+        <div class="row"><span>เกินกำหนด</span><b class="num">${nf(rows.filter(t => t.issues.some(i => i.k === 'overdue')).length)}</b></div>
+        <div class="row"><span>ไม่มีกำหนดส่ง</span><b class="num">${nf(rows.filter(t => t.issues.some(i => i.k === 'nodue')).length)}</b></div>
+        <p class="note">นับรวมงานย่อยในตารางด้านล่าง</p></div>
+    </div>
+    <section class="card" style="margin-top:16px"><div class="head"><div><h2>เหตุผลการจัดประเภทและสิ่งที่ต้องยืนยัน</h2><p class="sub">ข้อเสนอจากข้อมูล — เปลี่ยนเป็น “ยืนยันแล้ว” ได้เฉพาะเมื่อผู้รับผิดชอบยืนยัน</p></div></div>
+      <div class="tbl-wrap"><table style="min-width:900px"><thead><tr><th>งานหลักในแผนนี้</th><th>ประเภทและสถานะจัดประเภท</th><th>เหตุผล / สิ่งที่ต้องยืนยัน</th><th>หลักฐานที่ใช้</th></tr></thead><tbody>
+      ${rows.map(t => `<tr><td><b style="font-weight:600;color:var(--navy)">${esc(t.name)}</b><br>${pjLink(t)} · <span class="tag ${PJG[t.group].tag}">${esc(PJG[t.group].name)}</span></td>
+        <td>${pjTypeTag(t) || '<span class="note">–</span>'}${(t.cls || {}).state === 'confirmed' ? `<br><span class="note">${esc(t.cls.confirmed_by || '')} · ${esc(t.cls.confirmed_on || '')}</span>` : ''}</td>
+        <td>${esc((t.cls || {}).reason || '')}</td><td class="note">${esc((t.cls || {}).evidence || '')}</td></tr>`).join('')}
+      </tbody></table></div></section>
+    <section class="card" style="margin-top:16px"><div class="head"><div><h2>รายละเอียดงานและงานย่อย</h2><p class="sub">กดชื่องานเพื่อขยาย</p></div></div>
+      ${mountSlot(el => pjTree(el, P, null, listId))}</section>`;
+  }
+
+  /* ตาราง hierarchy: ค้นหา กรอง ขยาย/ย่อ ส่งออก CSV — ดูแลตัวเองในช่องของมันเอง */
+  function pjTree(el, P, fixedType, fixedList) {
+    const ps = pjState(), tasks = P.tasks, byId = {};
+    tasks.forEach(t => byId[t.id] = t);
+    const kids = {};
+    tasks.forEach(t => { if (t.parent) (kids[t.parent] = kids[t.parent] || []).push(t); });
+    const asgList = [...new Set(tasks.reduce((a, t) => a.concat(t.assignees), []))].sort();
+    const flags = [['action', 'มีประเด็นต้องดำเนินการ'], ['overdue', 'เกินกำหนด'], ['nodue', 'ไม่มีกำหนดส่ง'], ['stale', 'ไม่อัปเดตนาน'],
+      ['afterparent', 'กำหนดการไม่สอดคล้อง'], ['needsreview', 'รอจำแนกประเภท'], ['nodesc', 'ไม่มีผลส่งมอบให้ตรวจ']];
+    function pass(t) {
+      const q = ps.q.trim().toLowerCase();
+      if (q && [t.name, t.id, t.list_name || '', t.assignees.join(' '), t.desc].join(' ').toLowerCase().indexOf(q) < 0) return false;
+      const ty = fixedType || ps.type;
+      if (ty) { const root = t.parent ? byId[t.parent] : t; if (((root.cls || {}).type || '') !== ty) return false; }
+      if (ps.status && t.group !== ps.status) return false;
+      const li = fixedList || ps.list;
+      if (li && t.list_id !== li) return false;
+      if (ps.asg && t.assignees.indexOf(ps.asg) < 0) return false;
+      if (ps.flag === 'action' ? !pjActions(t).length : ps.flag ? !t.issues.some(i => i.k === ps.flag) : false) return false;
+      return true;
+    }
+    function visible() {
+      /* งานย่อยที่ผ่านตัวกรองต้องเห็นงานหลักของมันด้วย เพื่อให้ลำดับชั้นไม่ขาด (งานหลักที่ถูกดึงมาจะติดธง via) */
+      const hit = tasks.filter(pass), ids = new Set(hit.map(t => t.id)), out = [];
+      tasks.filter(t => !t.parent).forEach(t => {
+        const ch = (kids[t.id] || []).filter(k => ids.has(k.id));
+        if (!ids.has(t.id) && !ch.length) return;
+        out.push({ t, via: !ids.has(t.id), kids: ids.has(t.id) ? (kids[t.id] || []) : ch });
+      });
+      return out;
+    }
+    function draw() {
+      const rows = visible(), nMain = rows.filter(r => !r.via).length, nSub = M.sum(rows, r => r.kids.length);
+      const sel = (k, label, opts) => `<select data-k="${k}" aria-label="${esc(label)}"><option value="">${esc(label)}: ทั้งหมด</option>${opts.map(o => `<option value="${esc(o[0])}" ${ps[k] === o[0] ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select>`;
+      el.innerHTML = `<div class="tools no-print" style="margin-bottom:10px;justify-content:space-between">
+        <div class="tools"><input type="search" placeholder="ค้นหาชื่องาน Task ID ผู้รับผิดชอบ หรือรายละเอียด" value="${esc(ps.q)}" aria-label="ค้นหา" style="min-width:260px">
+          ${fixedType ? '' : sel('type', 'ประเภท', Object.keys(PJT).map(k => [k, PJT[k].name]))}
+          ${sel('status', 'สถานะ', Object.keys(PJG).map(k => [k, PJG[k].name]))}
+          ${fixedList ? '' : sel('list', 'แผนงาน', (P.meta.lists || []).map(l => [l.id, l.name || l.id]))}
+          ${sel('asg', 'ผู้รับผิดชอบ', asgList.map(a => [a, a]))}
+          ${sel('flag', 'สถานะข้อมูล', flags)}
+          <button class="btn" data-x="reset">ล้างตัวกรองของหน้านี้</button></div>
+        <div class="tools"><span class="note">งานหลัก ${nf(nMain)} · งานย่อย ${nf(nSub)}</span>
+          <button class="btn" data-x="exp">ขยายทั้งหมด</button><button class="btn" data-x="col">ย่อทั้งหมด</button><button class="btn" data-x="csv">ส่งออก CSV</button></div></div>
+        <div class="tbl-wrap"><table style="min-width:1180px"><thead><tr><th>งาน</th><th>ประเภท</th><th>แผนงาน</th><th>สถานะ</th><th>ผู้รับผิดชอบ</th><th>เริ่ม</th><th>กำหนดส่ง</th><th>อัปเดตล่าสุด</th><th class="r">งานย่อยเสร็จ</th><th>ประเด็น</th></tr></thead>
+        <tbody>${rows.length ? rows.map(r => rowHtml(r)).join('') : `<tr><td colspan="10"><div class="empty">ไม่พบงานตามเงื่อนไข — ล้างตัวกรองเพื่อดูทั้งหมด</div></td></tr>`}</tbody></table></div>`;
+      const inp = el.querySelector('input[type=search]');
+      inp.oninput = () => { ps.q = inp.value; const p = inp.selectionStart; draw(); const n = el.querySelector('input[type=search]'); n.focus(); n.setSelectionRange(p, p); };
+      el.querySelectorAll('select[data-k]').forEach(s => s.onchange = () => { ps[s.dataset.k] = s.value; draw(); });
+      el.querySelectorAll('button[data-x]').forEach(b => b.onclick = () => {
+        const x = b.dataset.x;
+        if (x === 'reset') { ps.q = ps.type = ps.status = ps.list = ps.asg = ps.flag = ''; }
+        else if (x === 'exp') visible().forEach(r => ps.open[r.t.id] = true);
+        else if (x === 'col') ps.open = {};
+        else if (x === 'csv') return csvOut(visible());
+        draw();
+      });
+      el.querySelectorAll('[data-t]').forEach(a => a.onclick = e => {
+        if (e.target.closest('a.pj-id')) return;                 // ลิงก์ไป ClickUp ไม่ถือเป็นการกดขยาย
+        e.preventDefault(); const id = a.dataset.t; ps.open[id] = !ps.open[id]; draw();
+      });
+    }
+    function issueTags(t) {
+      const a = pjActions(t);
+      if (!a.length) return t.issues.length ? `<span class="tag none">ข้อจำกัดข้อมูล ${t.issues.length}</span>` : '<span class="note">–</span>';
+      return a.map(i => `<span class="tag ${i.k === 'overdue' ? 'sev' : 'wait'}">${esc(PJI[i.k] || i.k)}</span>`).join(' ');
+    }
+    function rowHtml(r) {
+      const t = r.t, op = !!ps.open[t.id], ch = r.kids;
+      let h = `<tr${r.via ? ' style="opacity:.75"' : ''}><td style="min-width:300px"><button class="pj-tog" data-t="${esc(t.id)}" aria-expanded="${op}">${ch.length || t.desc || t.issues.length ? (op ? '▾' : '▸') : '·'}</button> <b style="font-weight:600;color:var(--navy)">${esc(t.name)}</b>${r.via ? ' <span class="tag none">แสดงเพราะงานย่อยเข้าเงื่อนไข</span>' : ''}<br><span class="note">${pjLink(t)}${ch.length ? ' · งานย่อย ' + nf(ch.length) + ' รายการ' : ''}</span></td>
+        <td>${pjTypeTag(t) || '<span class="note">–</span>'}</td><td>${esc(t.list_name || '–')}</td>
+        <td><span class="tag ${PJG[t.group].tag}">${esc(PJG[t.group].name)}</span><br><span class="note">${esc(t.status || '')}</span></td>
+        <td>${pjAsg(t)}</td><td class="num">${t.start ? thDs(t.start) : NA('ไม่ระบุ')}</td><td class="num">${pjDue(t)}</td><td class="num">${thDs(t.updated)}</td>
+        <td class="r num">${pjKid(t)}</td><td>${issueTags(t)}</td></tr>`;
+      if (!op) return h;
+      h += `<tr class="pj-det"><td colspan="10"><div class="pj-box">
+        ${t.desc ? `<div><b>รายละเอียดจาก ClickUp</b><div class="pj-desc">${esc(t.desc)}</div></div>` : '<div class="note">ไม่มี description ใน ClickUp</div>'}
+        ${t.cls ? `<div><b>การจัดประเภท</b> — ${esc(PJT[t.cls.type].name)} · ${t.cls.state === 'confirmed' ? 'ยืนยันโดย ' + esc(t.cls.confirmed_by) + ' ' + esc(t.cls.confirmed_on) : 'ข้อเสนอ ยังไม่ยืนยัน'}<div class="note">${esc(t.cls.reason || '')}${t.cls.evidence ? ' · หลักฐาน: ' + esc(t.cls.evidence) : ''}</div></div>` : ''}
+        ${t.issues.length ? `<div><b>ประเด็นและข้อจำกัด</b><ul class="pj-ul">${t.issues.map(i => `<li><span class="tag ${i.sev === 'action' ? (i.k === 'overdue' ? 'sev' : 'wait') : 'none'}">${esc(PJI[i.k] || i.k)}</span> ${esc(i.txt)} <span class="note">(${esc(t.id)} · อ้างวันที่ ${thDs(P.meta.today)})</span></li>`).join('')}</ul></div>` : ''}
+        <div class="note">พบจาก: ${esc((t.sources || []).join(', '))} · สร้าง ${thDs(t.created)} · ${t.closed ? 'ปิดงาน ' + thDs(t.closed) : 'ClickUp ไม่มีวันที่ปิดงาน'} · ความสำคัญ ${esc(t.priority || 'ไม่ระบุ')}</div>
+        <div><a class="btn" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">เปิดงานนี้ใน ClickUp ↗</a></div></div></td></tr>`;
+      ch.forEach(k => {
+        h += `<tr class="pj-sub"><td style="padding-left:34px"><span class="note">↳</span> ${esc(k.name)}<br><span class="note">${pjLink(k)} · งานย่อยของ ${esc(t.name)}</span></td>
+          <td><span class="note">งานย่อย — ไม่นับเป็นโครงการ</span></td><td>${esc(k.list_name || '–')}</td>
+          <td><span class="tag ${PJG[k.group].tag}">${esc(PJG[k.group].name)}</span><br><span class="note">${esc(k.status || '')}</span></td>
+          <td>${pjAsg(k)}</td><td class="num">${k.start ? thDs(k.start) : NA('ไม่ระบุ')}</td><td class="num">${pjDue(k)}</td><td class="num">${thDs(k.updated)}</td>
+          <td class="r num">${pjKid(k)}</td><td>${issueTags(k)}</td></tr>`;
+        if (k.issues.length) h += `<tr class="pj-det"><td colspan="10"><div class="pj-box" style="margin-left:34px"><ul class="pj-ul">${k.issues.map(i => `<li><span class="tag ${i.sev === 'action' ? (i.k === 'overdue' ? 'sev' : 'wait') : 'none'}">${esc(PJI[i.k] || i.k)}</span> ${esc(i.txt)} <span class="note">(${esc(k.id)})</span></li>`).join('')}</ul><div><a class="btn" href="${esc(k.url)}" target="_blank" rel="noopener noreferrer">เปิดงานย่อยใน ClickUp ↗</a></div></div></td></tr>`;
+      });
+      return h;
+    }
+    function csvOut(rows) {
+      const flat = [];
+      rows.forEach(r => { flat.push([r.t, null]); r.kids.forEach(k => flat.push([k, r.t])); });
+      const head = ['Task ID', 'ระดับ', 'ชื่องาน', 'งานหลัก', 'ประเภท (ชั้นจำแนก)', 'สถานะจัดประเภท', 'แผนงานตามแผนธุรกิจ', 'สถานะ ClickUp', 'กลุ่มสถานะ', 'ผู้รับผิดชอบ', 'วันเริ่ม', 'กำหนดส่ง', 'อัปเดตล่าสุด', 'งานย่อยเสร็จ/ทั้งหมด', 'ประเด็นที่ต้องดำเนินการ', 'URL'];
+      const out = [head.map(csvCell).join(',')];
+      flat.forEach(([t, p]) => out.push([t.id, t.parent ? 'งานย่อย' : 'งานหลัก', t.name, p ? p.name : '', (t.cls || {}).type ? PJT[t.cls.type].name : '', (t.cls || {}).state || '',
+        t.list_name || '', t.status || '', PJG[t.group].name, t.assignees.join(' / '), t.start ? t.start.slice(0, 10) : '', t.due ? t.due.slice(0, 10) : '',
+        t.updated ? t.updated.slice(0, 10) : '', t.kid_total == null ? 'N/A' : t.kid_done + '/' + t.kid_total,
+        pjActions(t).map(i => (PJI[i.k] || i.k) + ': ' + i.txt).join(' | '), t.url].map(csvCell).join(',')));
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+      a.download = 'SAM_clickup_tasks_' + P.meta.today + '.csv'; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    }
+    draw();
+  }
+
+  /* ตารางงานแบบ modal (ใช้กับ KPI) */
+  function pjTable(title, rows, sub) {
+    return {
+      title, sub: (sub ? sub + ' · ' : '') + 'ข้อมูลจาก ClickUp ดึงเมื่อ ' + thT(S.projects.meta.fetched_to), file: 'SAM_clickup', sort: 'due', dir: 1, rows, minw: 1100,
+      filters: [{ k: 'lv', label: 'ระดับ', get: r => r.parent ? 'งานย่อย' : 'งานหลัก' }, { k: 'gr', label: 'สถานะ', get: r => PJG[r.group].name }],
+      cols: [{ k: 'name', label: 'ชื่องาน', fmt: r => `<b style="font-weight:600;color:var(--navy)">${esc(r.name)}</b><br><span class="note">${pjLink(r)}${r.parent ? ' · งานย่อย' : ''}</span>`, csv: r => r.name },
+        { k: 'type', label: 'ประเภท', fmt: r => pjTypeTag(r) || '<span class="note">งานย่อย</span>', sortv: r => (r.cls || {}).type || '', csv: r => (r.cls || {}).type ? PJT[r.cls.type].name : '' },
+        { k: 'list_name', label: 'แผนงาน', csv: r => r.list_name || '' },
+        { k: 'group', label: 'สถานะ', fmt: r => `<span class="tag ${PJG[r.group].tag}">${esc(PJG[r.group].name)}</span>`, csv: r => r.status || '' },
+        { k: 'asg', label: 'ผู้รับผิดชอบ', fmt: r => pjAsg(r), sortv: r => r.assignees.join(' '), csv: r => r.assignees.join(' / ') },
+        { k: 'due', label: 'กำหนดส่ง', r: true, fmt: r => pjDue(r), sortv: r => r.due || '9999', csv: r => r.due ? r.due.slice(0, 10) : '' },
+        { k: 'updated', label: 'อัปเดตล่าสุด', r: true, fmt: r => thDs(r.updated), csv: r => r.updated ? r.updated.slice(0, 10) : '' },
+        { k: 'kid', label: 'งานย่อยเสร็จ', r: true, fmt: r => pjKid(r), sortv: r => r.kid_total == null ? -1 : r.kid_done / r.kid_total, csv: r => r.kid_total == null ? 'N/A' : r.kid_done + '/' + r.kid_total },
+        { k: 'iss', label: 'ประเด็น', fmt: r => pjActions(r).map(i => `<span class="tag ${i.k === 'overdue' ? 'sev' : 'wait'}">${esc(PJI[i.k] || i.k)}</span>`).join(' ') || '<span class="note">–</span>', sortv: r => -pjActions(r).length, csv: r => pjActions(r).map(i => (PJI[i.k] || i.k) + ': ' + i.txt).join(' | ') }],
+    };
+  }
+
+  /* ประเด็นที่ต้องดำเนินการ — จัดกลุ่มตามชนิด ทุกข้ออ้าง Task ID และเปิด ClickUp ได้ */
+  function pjIssues(P) {
+    const order = ['overdue', 'afterparent', 'donewithopen', 'kidsdone', 'needsreview', 'recurdone', 'nodesc', 'nodue', 'stale'];
+    const grp = order.map(k => ({ k, rows: P.tasks.filter(t => t.issues.some(i => i.k === k)) })).filter(g => g.rows.length);
+    if (!grp.length) return '<div class="empty">ไม่พบประเด็นจากข้อมูลที่ดึงได้</div>';
+    return grp.map(g => `<details class="pj-grp" ${['overdue', 'afterparent', 'donewithopen', 'kidsdone', 'needsreview'].indexOf(g.k) >= 0 ? 'open' : ''}>
+      <summary><b>${esc(PJI[g.k] || g.k)}</b> <span class="tag ${g.k === 'overdue' ? 'sev' : 'wait'}">${nf(g.rows.length)} รายการ</span></summary>
+      <ul class="pj-ul">${g.rows.map(t => { const i = t.issues.filter(x => x.k === g.k)[0]; return `<li><b style="font-weight:600;color:var(--navy)">${esc(t.name)}</b> ${t.parent ? '<span class="tag none">งานย่อย</span>' : ''} — ${esc(i.txt)} <span class="note">· ${esc(t.list_name || '')} · ${pjAsg(t)} · อัปเดต ${thDs(t.updated)}</span> ${pjLink(t)}</li>`; }).join('')}</ul></details>`).join('');
+  }
+
+  /* งานชื่อซ้ำ — ไม่รวมให้อัตโนมัติ แสดงเป็นรายการรอตรวจความสัมพันธ์ */
+  function pjDupes(P) {
+    if (!P.name_dupes.length) return '';
+    return `<section class="card" style="margin-top:16px"><div class="head"><div><h2>งานที่อาจเกี่ยวข้องกันและควรตรวจความซ้ำ</h2><p class="sub">ชื่อเหมือนกันแต่เป็นคนละ Task ID — ไม่รวมให้โดยอัตโนมัติ</p></div></div>
+      <ul class="pj-ul">${P.name_dupes.map(d => { const ts = d.ids.map(i => P.tasks.filter(t => t.id === i)[0]).filter(Boolean);
+        return `<li><b style="font-weight:600;color:var(--navy)">${esc(d.name)}</b> — ${nf(ts.length)} รายการ: ${ts.map(t => `${pjLink(t)} <span class="note">(${esc(PJG[t.group].name)}${t.parent ? ' · งานย่อยของ ' + esc((P.tasks.filter(x => x.id === t.parent)[0] || {}).name || '') : ''})</span>`).join(' · ')}</li>`; }).join('')}</ul>
+      <p class="note">ให้ผู้รับผิดชอบยืนยันว่าเป็นงานเดียวกันหรือไม่ ก่อนจะรวมหรือปิดรายการใด</p></section>`;
+  }
+
+  /* ยังไม่มี data/projects.json — บอกวิธีนำเข้า ไม่แสดงตัวเลขสมมุติ */
+  function pProjEmpty() {
+    const need = [['รายชื่องานและโครงการ', 'ยังไม่ได้นำเข้าข้อมูล ClickUp — รัน scripts/ingest_clickup.py แล้ว scripts/import_clickup.py'],
       ['ความคืบหน้าเทียบแผน', 'แผนงานและเปอร์เซ็นต์ความคืบหน้าที่ผู้ควบคุมงานยืนยัน'],
       ['ต้นทุนโครงการเทียบงบ', 'งบประมาณรายโครงการ และการผูกเอกสาร PO/AP เข้ากับรหัสโครงการ'],
-      ['Resource Utilization', 'ชั่วโมงทำงานจริงรายบุคคล/ทีม — ไม่มีระบบบันทึกเวลาในแหล่งที่เข้าถึงได้ จึงไม่คำนวณจากจำนวนพนักงานหรือค่าแรงแทน'],
-      ['ความล่าช้าและสาเหตุ', 'กำหนดส่งมอบ วันที่ส่งมอบจริง สาเหตุความล่าช้า และการแก้ไข']];
-    return `<div class="empty note-top" style="border-style:solid"><b>ยังไม่มีแหล่งข้อมูล</b> — ข้อมูลที่เข้าถึงได้ของ SAM เป็นเอกสารบัญชี (BL/IV/PO/AP) ไฟล์การเดินระบบ และใบงานแจ้งซ่อม ซึ่งไม่มีรหัสโครงการและไม่มีชั่วโมงทำงาน · หน้านี้จึงไม่แสดงตัวเลขสมมุติและไม่แสดง Resource Utilization</div>
-    <section class="card"><div class="head"><div><h2>ข้อมูลที่ต้องได้รับก่อนจึงจะแสดงได้</h2><p class="sub">ส่งถึงฝ่ายโครงการ/วิศวกรรม</p></div></div>
+      ['Resource Utilization', 'ชั่วโมงทำงานจริงรายบุคคล/ทีม — ไม่คำนวณจากจำนวนผู้รับผิดชอบหรืออายุงานแทน']];
+    return `<div class="empty note-top" style="border-style:solid"><b>ยังไม่มีข้อมูลโครงการในรุ่นนี้</b> — หน้านี้อ่านจาก <code>data/projects.json</code> ที่สร้างจาก ClickUp (อ่านอย่างเดียว)</div>
+    <section class="card"><div class="head"><div><h2>ข้อมูลที่ต้องได้รับก่อนจึงจะแสดงได้</h2></div></div>
       <div class="tbl-wrap"><table><thead><tr><th>KPI</th><th>ข้อมูลที่ต้องการ</th><th>สถานะ</th></tr></thead><tbody>
       ${need.map(n => `<tr><td style="white-space:nowrap"><b style="font-weight:600;color:var(--navy)">${esc(n[0])}</b></td><td>${esc(n[1])}</td><td><span class="tag wait">รอข้อมูล</span></td></tr>`).join('')}
-      </tbody></table></div>
-      <p class="note" style="margin-top:10px">สิ่งที่ใกล้เคียงที่สุดและมีข้อมูลจริงแล้วคือภาระ PO ที่อนุมัติแล้วยังไม่ตั้งเจ้าหนี้ (หน้าการเงิน › เจ้าหนี้) และใบงานแจ้งซ่อม (หน้าปฏิบัติการ › Maintenance Snapshot)</p></section>`;
+      </tbody></table></div></section>`;
   }
 
   /* ---------- กลยุทธ์: แนวโน้มและการเติบโต ---------- */
@@ -701,19 +983,30 @@
   const pSales = () => segTabs('sales') + ({ billing: pBilling, crm: pCRM }[subOf('sales')])();
   const pFin = () => segTabs('fin') + ({ pl: pPL, recv: pRecv, pay: pPay }[subOf('fin')])();
   const pOpsGrp = () => segTabs('ops') + ({ prod: pOps, maint: pMaint }[subOf('ops')])();
+  const pProjGrp = () => (S.projects ? segTabs('proj') : '') + pProj();
 
   /* ---------- โครงหน้า ---------- */
   function header() {
     const m = S.meta, ms = M.months(S), lastBl = S.bl_lines.reduce((a, l) => l.date > a ? l.date : a, '');
     const asofTxt = thD(m.asof), cmp = M.compareMonth(S, st.ym, F());
+    /* หน้าโครงการใช้ข้อมูล ClickUp ซึ่งไม่มีงวดบัญชีและไม่ผูกกับพื้นที่ OM — ปิดตัวกรองเดือน/พื้นที่ไว้
+       แล้วบอกตรง ๆ ว่าใช้ตัวกรองของหน้านั้นเอง เพื่อไม่ให้เข้าใจว่ากรองแล้วทั้งที่ตัวเลขไม่เปลี่ยน */
+    if (st.page === 'proj') {
+      const p = S.projects;
+      $('#filters').innerHTML = `<div class="hint" style="flex:1 1 auto">ตัวกรอง<b> ปี / เดือน / พื้นที่</b> ใช้กับเอกสารบัญชี TRCLOUD จึงปิดไว้ในหน้านี้ — งานและโครงการมาจาก ClickUp ที่ไม่มีงวดบัญชีและไม่ผูกกับรหัสพื้นที่ OM · ใช้ตัวกรองของหน้านี้ (ค้นหา แผนงาน ประเภท สถานะ ผู้รับผิดชอบ สถานะข้อมูล) ด้านล่าง${p ? ' · ข้อมูล ClickUp ดึงเมื่อ ' + thT(p.meta.fetched_to) + ' (คนละเวลากับข้อมูลบัญชี)' : ''}</div>
+        <button class="btn primary no-print" id="f-p">พิมพ์ / บันทึก PDF</button>`;
+      $('#f-p').onclick = () => window.print();
+    } else
     $('#filters').innerHTML = `<label>ปี<select id="f-y" aria-label="ปี"><option>${+m.asof.slice(0, 4) + 543}</option></select></label>
       <label>เดือน<select id="f-m">${ms.map(x => `<option value="${x}" ${x === st.ym ? 'selected' : ''}>${TH[+x.slice(5) - 1]}${x === m.asof.slice(0, 7) ? ' (บางเดือน)' : ''}</option>`).join('')}</select></label>
       <label class="grow">พื้นที่<select id="f-u"><option value="">ทุกพื้นที่</option>${M.unitOptions(S).map(u => `<option value="${u[0]}" ${u[0] === st.unit ? 'selected' : ''}>${esc(u[1])}</option>`).join('')}</select></label>
       <button class="btn no-print" id="f-r" ${st.unit || st.ym !== m.asof.slice(0, 7) ? '' : 'disabled'}>ล้างตัวกรอง</button>
       <button class="btn primary no-print" id="f-p">พิมพ์ / บันทึก PDF</button>
       <div class="hint">ช่วงที่เลือก ${thDs(cmp.from)} – ${thDs(cmp.to)}${cmp.partial ? ' (ข้อมูลบางเดือน)' : ''} · ${cmp.prev ? 'เทียบกับ ' + thDs(cmp.pfrom) + ' – ' + thDs(cmp.pto) + (cmp.partial ? ' (ช่วงวันเท่ากันของเดือนก่อน)' : '') : 'ไม่มีเดือนก่อนในชุดข้อมูล'} · พื้นที่: ${esc(st.unit ? M.unitLabel(st.unit, areas()) : 'ทุกพื้นที่')} · วันที่อ้างอิงลูกหนี้/เจ้าหนี้ ${asofTxt}</div>`;
-    $('#f-m').onchange = e => { st.ym = e.target.value; render(false); }; $('#f-u').onchange = e => { st.unit = e.target.value; render(false); }; $('#f-p').onclick = () => window.print();
-    $('#f-r').onclick = () => { st.unit = ''; st.ym = m.asof.slice(0, 7); render(false); };
+    if ($('#f-m')) {
+      $('#f-m').onchange = e => { st.ym = e.target.value; render(false); }; $('#f-u').onchange = e => { st.unit = e.target.value; render(false); }; $('#f-p').onclick = () => window.print();
+      $('#f-r').onclick = () => { st.unit = ''; st.ym = m.asof.slice(0, 7); render(false); };
+    }
     const pg = (PAGES.filter(p => p[0] === st.page)[0] || PAGES[0])[1], sb = subOf(st.page);
     const sbLabel = sb ? (SUBS[st.page].filter(x => x[0] === sb)[0] || [])[1] : '', key = sb ? st.page + '/' + sb : st.page;
     $('#ptitle').textContent = pg + (sbLabel ? ' · ' + sbLabel : '') + (['exec', 'sales/billing', 'fin/pl', 'ops/maint'].indexOf(key) >= 0 ? ' · ' + thM(st.ym) : '');
@@ -724,23 +1017,25 @@
       'fin/pl': 'งบบริหารประกอบจากสมุดรายวันแยกประเภท (get_ledger)',
       'fin/recv': 'ลูกหนี้และการรับชำระจากเอกสารบัญชีใน TRCLOUD',
       'fin/pay': 'เจ้าหนี้และภาระจัดซื้อจากเอกสารบัญชีใน TRCLOUD',
-      'proj': 'โครงการ — ยังไม่มีแหล่งข้อมูล',
+      'proj': 'โครงการ — ยังไม่ได้นำเข้าข้อมูล ClickUp',
+      'proj/all': 'แผนงานตามแผนธุรกิจและงานจริงใน ClickUp (SAM Space) — อ่านอย่างเดียว',
       'strat': 'แนวโน้มและการเติบโตจากข้อมูลที่ตรวจย้อนได้',
       'ops/prod': 'ปริมาณน้ำจากไฟล์ OM · สารเคมีจาก PO ใน TRCLOUD',
       'ops/maint': 'ใบงานแจ้งซ่อมจากระบบแจ้งซ่อม · ค่าใช้จ่ายจาก PO ใน TRCLOUD',
       'data': 'สำหรับผู้ตรวจสอบข้อมูล'
-    }[key] || 'ข้อมูลเอกสารบัญชีจาก TRCLOUD');
+    }[key] || (st.page === 'proj' && sb ? 'แผนงานตามแผนธุรกิจ “' + sbLabel + '” · งานจริงจาก ClickUp' : 'ข้อมูลเอกสารบัญชีจาก TRCLOUD'));
     $('#status').innerHTML = `<span class="chip"><span class="dot"></span>Snapshot — ไม่ใช่ข้อมูลสด</span><span class="chip plain">ดึงจาก TRCLOUD ${thT(m.fetched_to)}</span><span class="chip plain">BL ล่าสุด ${thDs(lastBl)}</span><span class="chip plain">วันที่อ้างอิง ${thDs(m.asof)}</span>${S.om ? `<span class="chip plain">ไฟล์ OM ถึง ${TH[M.om(S).last('volume', 'actual', 2026) - 1]} ${String(2569).slice(2)}</span>` : ''}${S.maint ? `<span class="chip plain">ใบงานแจ้งซ่อมถึง ${thDs(S.maint.source.reported_to)}</span>` : ''}<span class="chip warn">ข้อมูลบางส่วน: ยังไม่ปิดบัญชี · ไม่มีเงินสดและคุณภาพน้ำ</span>`;
     $('#tabs').innerHTML = PAGES.map(p => `<a href="#/${p[0]}" ${p[0] === st.page ? 'aria-current="page"' : ''}>${p[1]}</a>`).join('');
     $('#foot').innerHTML = `ใช้ภายในเพื่อการตรวจรับ · ข้อมูลการเงินของบริษัท ห้ามเผยแพร่ · สร้าง snapshot ${thT(m.built_at)} · ไม่มีปุ่มรีเฟรชเพราะระบบอ่านจาก snapshot — อัปเดตข้อมูลตาม README`;
   }
   function render(anim) {
     document.body.classList.toggle('no-anim', anim === false);
-    DR = []; TB = []; try { sessionStorage.setItem('sam-st', JSON.stringify(st)); } catch (e) { /* ไม่มี storage ก็ใช้งานได้ */ }
+    DR = []; TB = []; MT = []; try { sessionStorage.setItem('sam-st', JSON.stringify(st)); } catch (e) { /* ไม่มี storage ก็ใช้งานได้ */ }
     header();
-    const fn = { exec: pExec, sales: pSales, fin: pFin, proj: pProj, strat: pStrat, ops: pOpsGrp, data: pData }[st.page] || pExec, main = $('#main');
+    const fn = { exec: pExec, sales: pSales, fin: pFin, proj: pProjGrp, strat: pStrat, ops: pOpsGrp, data: pData }[st.page] || pExec, main = $('#main');
     try { main.innerHTML = fn(); } catch (e) { console.error(e); main.innerHTML = `<div class="state err">แสดงหน้านี้ไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
     main.querySelectorAll('[data-table]').forEach(el => mountTable(el, TB[+el.dataset.table]));
+    main.querySelectorAll('[data-mount]').forEach(el => MT[+el.dataset.mount](el));
     document.title = 'SAM Executive Snapshot · ' + (PAGES.filter(p => p[0] === st.page)[0] || PAGES[0])[1];
     if (anim !== false) countUp(main);
   }
@@ -785,6 +1080,9 @@
     const sp = route(st.page); st.page = sp || 'exec';
     const hp = route(location.hash.replace('#/', '')); if (hp) st.page = hp;
     if (!st.ym || M.months(S).indexOf(st.ym) < 0) st.ym = S.meta.asof.slice(0, 7);
+    /* หน้าย่อยของหน้าโครงการ = แผนงานตามแผนธุรกิจ (หนึ่ง List ใน ClickUp = หนึ่งแผนงาน) สร้างจากข้อมูลจริง ไม่ fix ชื่อไว้ในโค้ด */
+    if (S.projects) SUBS.proj = [['all', 'ภาพรวมตามแผนธุรกิจ']].concat((S.projects.meta.lists || []).map(l => [l.id, l.name || l.id]));
+    else delete SUBS.proj;
     window.SAM = { snap: S, state: st }; render(true);
   }
   window.DASHApp = { start: start };
