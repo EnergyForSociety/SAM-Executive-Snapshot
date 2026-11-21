@@ -1062,15 +1062,16 @@
     return null;
   }
   window.addEventListener('hashchange', () => { const p = route(location.hash.replace('#/', '')); if (p && (p !== st.page || SUBS[p])) { st.page = p; render(true); window.scrollTo(0, 0); } });
-  /* ---------- ธีม: อัตโนมัติ (ตามระบบ) / สว่าง / มืด ---------- */
+  /* ---------- ธีม: ปกติ (Corporate SAM) / มืด / สว่าง — จำค่าที่เลือก ---------- */
   function setTheme(t) {
-    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
+    if (['sam', 'dark', 'light'].indexOf(t) < 0) t = 'sam';
+    document.documentElement.setAttribute('data-theme', t);
     try { localStorage.setItem('sam-theme', t); } catch (e) { /* ใช้ค่าในหน้านี้อย่างเดียว */ }
     document.querySelectorAll('#theme button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === t)));
   }
-  let theme = 'auto'; try { theme = localStorage.getItem('sam-theme') || 'auto'; } catch (e) { /* ค่าเริ่มต้น */ }
+  let theme = 'sam'; try { theme = localStorage.getItem('sam-theme') || 'sam'; } catch (e) { /* ค่าเริ่มต้น */ }
   setTheme(theme);
-  document.querySelectorAll('#theme button').forEach(b => b.onclick = () => setTheme(b.dataset.t));
+  document.querySelectorAll('#theme button').forEach(b => b.onclick = () => { setTheme(b.dataset.t); if (S) render(false); });
 
   /* ---------- เริ่มทำงาน: เว็บจริงรับข้อมูลที่ถอดรหัสแล้วจาก gate.js (เข้าสู่ระบบ M365) · ในเครื่องอ่าน data/snapshot.json ---------- */
   function start(d) {

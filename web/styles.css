@@ -4,46 +4,67 @@
 @font-face { font-family: 'Plex Thai'; font-weight: 500; src: url(fonts/ibm-plex-sans-thai-latin-500-normal.woff2) format('woff2'); font-display: swap; }
 @font-face { font-family: 'Plex Thai'; font-weight: 600; src: url(fonts/ibm-plex-sans-thai-thai-600-normal.woff2) format('woff2'); unicode-range: U+0E01-0E5B, U+200C-200D, U+25CC; font-display: swap; }
 @font-face { font-family: 'Plex Thai'; font-weight: 600; src: url(fonts/ibm-plex-sans-thai-latin-600-normal.woff2) format('woff2'); font-display: swap; }
-:root {
+:root, :root[data-theme="sam"] {
   --navy: #17365D; --blue: #1B75BB; --mid: #588BC8; --sky: #8DB2DE; --pale: #E6EEF8;
   --bg: #F4F6FA; --card: #FFFFFF; --line: #DCE3EC; --ink: #1B2A3D; --muted: #5F6F84;
   --warn: #C2570C; --warnbg: #FDF1E4; --bad: #B42318; --badbg: #FCEBEA; --ok: #1E7A4C; --na: #8A96A6;
   --band: #17365D; --band2: #10294A; --bar1: #17365D; --bar2: #588BC8; --bar3: #8DB2DE; --barded: #F3B27A; --chem: #2A8C7B; --grid: #E3E8EF; --track: #EEF2F7;
   --pill: #17365D; --pillfg: #FFFFFF; --hover: #F6F9FD; --sel: #EEF4FB; --insbg: #FAFBFD; --inswarn: #FFFAF4; --shadow: 0 1px 2px rgba(23, 54, 93, .05); --input: #FFFFFF; --chip2: #EEF1F5;
+  --bandtxt: #DCE8F7; --bandhead: #FFFFFF; --bandline: rgba(141, 178, 222, .6); --wave: #8DB2DE;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --navy: #DCE8F7; --blue: #6FB0E8; --mid: #6E9FD6; --sky: #8DB2DE; --pale: #1E3350; --bg: #0D1623; --card: #142133; --line: #26364C; --ink: #E4ECF6; --muted: #9AABC0; --warn: #F0A060; --warnbg: #3A2614; --bad: #F08A80; --badbg: #3A1A18; --ok: #6FD39A; --na: #7D8CA0; --band: #0A1829; --band2: #071222; --bar1: #8DB2DE; --bar2: #588BC8; --bar3: #3D5F86; --barded: #D98A4E; --chem: #5CC2AD; --grid: #24344A; --track: #1E2D42; --pill: #2E4E78; --pillfg: #EAF2FF; --hover: #1B2B40; --sel: #1A2C44; --insbg: #172638; --inswarn: #2A2118; --shadow: 0 1px 2px rgba(0, 0, 0, .35); --input: #0F1B2B; --chip2: #1E2D42; color-scheme: dark; } }
-:root[data-theme="dark"] { --navy: #DCE8F7; --blue: #6FB0E8; --mid: #6E9FD6; --sky: #8DB2DE; --pale: #1E3350; --bg: #0D1623; --card: #142133; --line: #26364C; --ink: #E4ECF6; --muted: #9AABC0; --warn: #F0A060; --warnbg: #3A2614; --bad: #F08A80; --badbg: #3A1A18; --ok: #6FD39A; --na: #7D8CA0; --band: #0A1829; --band2: #071222; --bar1: #8DB2DE; --bar2: #588BC8; --bar3: #3D5F86; --barded: #D98A4E; --chem: #5CC2AD; --grid: #24344A; --track: #1E2D42; --pill: #2E4E78; --pillfg: #EAF2FF; --hover: #1B2B40; --sel: #1A2C44; --insbg: #172638; --inswarn: #2A2118; --shadow: 0 1px 2px rgba(0, 0, 0, .35); --input: #0F1B2B; --chip2: #1E2D42; color-scheme: dark; }
+:root[data-theme="light"] {
+  --navy: #1F2B3A; --blue: #1B75BB; --mid: #588BC8; --sky: #8DB2DE; --pale: #EEF3F9;
+  --bg: #FFFFFF; --card: #FFFFFF; --line: #E3E7ED; --ink: #1A2230; --muted: #5C6675;
+  --warn: #C2570C; --warnbg: #FDF2E8; --bad: #B42318; --badbg: #FCEBEA; --ok: #1E7A4C; --na: #8A94A2;
+  --band: #FFFFFF; --band2: #F3F6FA; --bar1: #17365D; --bar2: #588BC8; --bar3: #B9D0EA; --barded: #F3B27A; --chem: #2A8C7B; --grid: #EDF0F4; --track: #EFF2F6;
+  --pill: #17365D; --pillfg: #FFFFFF; --hover: #F5F7FA; --sel: #EEF3F9; --insbg: #FAFBFC; --inswarn: #FFF9F3; --shadow: 0 1px 2px rgba(0, 0, 0, .05); --input: #FFFFFF; --chip2: #F0F2F5;
+  --bandtxt: #3E4A5A; --bandhead: #17365D; --bandline: #C9D6E6; --wave: #1B75BB;
+  color-scheme: light;
+}
+:root[data-theme="dark"] { --navy: #DCE8F7; --blue: #6FB0E8; --mid: #6E9FD6; --sky: #8DB2DE; --pale: #1E3350; --bg: #0D1623; --card: #142133; --line: #26364C; --ink: #E4ECF6; --muted: #9AABC0; --warn: #F0A060; --warnbg: #3A2614; --bad: #F08A80; --badbg: #3A1A18; --ok: #6FD39A; --na: #7D8CA0; --band: #0A1829; --band2: #071222; --bar1: #8DB2DE; --bar2: #588BC8; --bar3: #3D5F86; --barded: #D98A4E; --chem: #5CC2AD; --grid: #24344A; --track: #1E2D42; --pill: #2E4E78; --pillfg: #EAF2FF; --hover: #1B2B40; --sel: #1A2C44; --insbg: #172638; --inswarn: #2A2118; --shadow: 0 1px 2px rgba(0, 0, 0, .35); --input: #0F1B2B; --chip2: #1E2D42; --bandtxt: #BFD3EA; --bandhead: #FFFFFF; --bandline: rgba(141, 178, 222, .45); --wave: #6FB0E8; color-scheme: dark; }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Plex Thai', 'Sarabun', 'Leelawadee UI', Tahoma, sans-serif; font-size: 15px; line-height: 1.55; }
 h1, h2, h3, p { margin: 0; }
 button, select, input { font: inherit; color: inherit; }
 .num { font-variant-numeric: tabular-nums; }
-.band { background: linear-gradient(90deg, var(--band), var(--band2)); color: #fff; position: relative; overflow: hidden; }
+.band { background: linear-gradient(90deg, var(--band), var(--band2)); color: var(--bandtxt); border-bottom: 3px solid var(--blue); position: relative; overflow: hidden; }
 .band-in { position: relative; z-index: 1; }
 .band-wave { position: absolute; left: 0; bottom: 0; width: 200%; height: 100%; pointer-events: none; }
-.band-wave path { fill: #8DB2DE; }
+.band-wave path { fill: var(--wave); }
 .band-wave .w1 { opacity: .10; animation: wave 14s linear infinite; }
 .band-wave .w2 { opacity: .07; animation: wave 22s linear infinite reverse; }
 @keyframes wave { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 .band-in { max-width: 1320px; margin: 0 auto; padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; }
 .brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
 .brand img { height: 46px; width: auto; flex: none; }
-.brand-txt { display: flex; flex-direction: column; border-left: 1px solid rgba(141, 178, 222, .6); padding-left: 18px; line-height: 1.3; }
-.brand-txt b { font-weight: 600; font-size: 19px; letter-spacing: .02em; color: #fff; }
-.brand-txt span { font-size: 13px; color: #C9DAEE; }
+.brand-txt { display: flex; flex-direction: column; border-left: 1px solid var(--bandline); padding-left: 18px; line-height: 1.3; }
+.brand-txt b { font-weight: 600; font-size: 19px; letter-spacing: .02em; color: var(--bandhead); }
+.brand-txt span { font-size: 13px; color: var(--bandtxt); opacity: .9; }
 .band-right { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.seg { display: inline-flex; padding: 3px; border: 1px solid rgba(141, 178, 222, .55); border-radius: 999px; }
-.seg button { min-height: 34px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; color: #DCE8F7; cursor: pointer; font-size: 14px; }
-.seg button[aria-pressed="true"] { background: #8DB2DE; color: #10294A; font-weight: 600; }
+/* ตัวเลือกธีม — segmented control แบบเดียวกับ PSG (track โปร่ง + ปุ่มที่เลือกยกขึ้นเบา ๆ) */
+.seg { display: inline-flex; gap: 2px; padding: 4px; border-radius: 14px; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); }
+.seg button { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 16px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--bandtxt); opacity: .82; cursor: pointer; font: inherit; font-size: 14px; transition: background-color .18s ease, opacity .18s ease, box-shadow .18s ease; }
+.seg button svg { flex: none; }
+.seg button:hover { opacity: 1; background: rgba(255, 255, 255, .06); }
+.seg button:focus-visible { outline: 2px solid var(--sky); outline-offset: 1px; }
+.seg button[aria-pressed="true"] { opacity: 1; color: var(--bandhead); background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .10); box-shadow: 0 1px 3px rgba(0, 0, 0, .22); font-weight: 500; }
+:root[data-theme="light"] .seg { background: #EEF2F6; border-color: #DCE3EC; box-shadow: none; }
+:root[data-theme="light"] .seg button:hover { background: rgba(0, 0, 0, .04); }
+:root[data-theme="light"] .seg button[aria-pressed="true"] { background: #FFFFFF; color: var(--bandhead); border-color: #DCE3EC; box-shadow: 0 1px 3px rgba(0, 0, 0, .10); }
+:root[data-theme="light"] .seg button:focus-visible { outline-color: var(--blue); }
+:root[data-theme="light"] .band-wave { opacity: .45; }
+.logo-l { display: none; } :root[data-theme="light"] .logo-l { display: block; } :root[data-theme="light"] .logo-d { display: none; }
+@media (max-width: 560px) { .seg button { padding: 0 11px; gap: 6px; } }
+@media (prefers-reduced-motion: reduce) { .seg button { transition: none; } }
 /* แท็บหน้าย่อยในพื้นที่เนื้อหา (พื้นสว่าง) — ใช้โครงเดียวกับ .seg ของแถบด้านบน */
 .seg.subseg { border-color: var(--line); background: var(--card); align-self: flex-start; flex-wrap: wrap; max-width: 100%; }
 .seg.subseg button { color: var(--muted); }
 .seg.subseg button:hover { background: var(--hover); color: var(--ink); }
 .seg.subseg button[aria-pressed="true"] { background: var(--pill); color: var(--pillfg); font-weight: 600; }
-.who { font-size: 13.5px; color: #DCE8F7; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.btn-out { min-height: 40px; padding: 0 16px; border: 1px solid #8DB2DE; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; font-size: 14px; }
+.who { font-size: 13.5px; color: var(--bandtxt); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn-out { min-height: 40px; padding: 0 16px; border: 1px solid var(--sky); border-radius: 6px; background: transparent; color: var(--bandhead); cursor: pointer; font-size: 14px; }
 .btn-out:hover { background: rgba(141, 178, 222, .15); }
 .navbar { background: var(--card); border-bottom: 1px solid var(--line); }
 .tabs { max-width: 1320px; margin: 0 auto; padding: 0 20px; display: flex; gap: 2px; overflow-x: auto; }
@@ -66,7 +87,7 @@ button, select, input { font: inherit; color: inherit; }
 .btn { cursor: pointer; font-weight: 500; color: var(--navy); }
 .btn:hover { border-color: var(--mid); }
 .btn:disabled { opacity: .5; cursor: default; }
-.btn.primary { background: var(--band); border-color: var(--band); color: #fff; }
+.btn.primary { background: var(--pill); border-color: var(--pill); color: var(--pillfg); }
 .filters .hint { flex-basis: 100%; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--pale); color: var(--navy); white-space: nowrap; }
 .chip.warn { background: var(--warnbg); color: var(--warn); }
@@ -178,7 +199,7 @@ tbody tr:nth-child(n+2) { animation-delay: .03s; } tbody tr:nth-child(n+4) { ani
   --bg: #F4F6FA !important; --card: #FFFFFF !important; --line: #DCE3EC !important; --ink: #1B2A3D !important; --muted: #5F6F84 !important;
   --warn: #C2570C !important; --warnbg: #FDF1E4 !important; --bad: #B42318 !important; --badbg: #FCEBEA !important; --ok: #1E7A4C !important; --na: #8A96A6 !important;
   --band: #17365D !important; --band2: #10294A !important; --bar1: #17365D !important; --bar2: #588BC8 !important; --bar3: #8DB2DE !important; --barded: #F3B27A !important; --chem: #2A8C7B !important; --grid: #E3E8EF !important; --track: #EEF2F7 !important;
-  --hover: #F6F9FD !important; --sel: #EEF4FB !important; --insbg: #FAFBFD !important; --inswarn: #FFFAF4 !important; --shadow: 0 1px 2px rgba(23, 54, 93, .05) !important; --input: #FFFFFF !important; --chip2: #EEF1F5 !important;
+  --hover: #F6F9FD !important; --sel: #EEF4FB !important; --insbg: #FAFBFD !important; --inswarn: #FFFAF4 !important; --shadow: 0 1px 2px rgba(23, 54, 93, .05) !important; --input: #FFFFFF !important; --chip2: #EEF1F5 !important; --pill: #17365D !important; --pillfg: #FFFFFF !important; --bandtxt: #DCE8F7 !important; --bandhead: #FFFFFF !important; --bandline: rgba(141, 178, 222, .6) !important; --wave: #8DB2DE !important;
    }
   body { background: #fff; font-size: 11.5px; zoom: 0.8; }
   .filters, .tabs, .navbar, .seg, .btn-out, .who, .btn, .more, .modal, .tools, .pager, .no-print { display: none !important; } * { animation: none !important; } .band { background: #17365D !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } .pagehead { padding: 8px 0 0; } .filterbar { display: none; }
